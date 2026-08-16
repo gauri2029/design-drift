@@ -8,7 +8,10 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-design_drift}
       POSTGRES_DB: ${POSTGRES_DB:-design_drift}
     ports:
-      - "5432:5432"
+      # Host-side port is configurable: some machines already run a native
+      # Postgres on 5432, which would silently shadow this container on
+      # `localhost`. Container-internal port (used by `backend` below) stays 5432.
+      - "${POSTGRES_HOST_PORT:-55432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
