@@ -3,20 +3,20 @@ import { describe, expect, it, vi } from 'vitest'
 import { ScanRunner } from './ScanRunner'
 
 describe('ScanRunner', () => {
-  it('calls onRun with no breakpoint by default', async () => {
+  it('calls onRun with match_figma by default', async () => {
     const onRun = vi.fn().mockResolvedValue(undefined)
     render(<ScanRunner onRun={onRun} onRunAllBreakpoints={vi.fn()} running={false} />)
 
     fireEvent.click(screen.getByRole('button', { name: /^run scan$/i }))
 
-    expect(onRun).toHaveBeenCalledWith(undefined)
+    expect(onRun).toHaveBeenCalledWith('match_figma')
   })
 
   it('calls onRun with the selected breakpoint', async () => {
     const onRun = vi.fn().mockResolvedValue(undefined)
     render(<ScanRunner onRun={onRun} onRunAllBreakpoints={vi.fn()} running={false} />)
 
-    fireEvent.change(screen.getByLabelText(/breakpoint/i), { target: { value: 'mobile' } })
+    fireEvent.change(screen.getByLabelText(/scan mode/i), { target: { value: 'mobile' } })
     fireEvent.click(screen.getByRole('button', { name: /^run scan$/i }))
 
     expect(onRun).toHaveBeenCalledWith('mobile')

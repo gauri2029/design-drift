@@ -3,7 +3,7 @@ import {
   createScan as createScanRequest,
   createScansAtAllBreakpoints,
   fetchScans,
-  type Breakpoint,
+  type ScanMode,
   type Scan,
 } from '../lib/api'
 
@@ -16,7 +16,7 @@ interface UseScansResult {
   selectedScan: Scan | null
   selectScan: (id: string) => void
   running: boolean
-  runScan: (breakpoint?: Breakpoint) => Promise<void>
+  runScan: (breakpoint?: ScanMode) => Promise<void>
   runAllBreakpoints: () => Promise<void>
 }
 
@@ -53,7 +53,7 @@ export function useScans(projectId: string): UseScansResult {
   }, [projectId])
 
   const runScan = useCallback(
-    async (breakpoint?: Breakpoint) => {
+    async (breakpoint?: ScanMode) => {
       setRunning(true)
       try {
         const scan = await createScanRequest(projectId, breakpoint)

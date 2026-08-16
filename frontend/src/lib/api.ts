@@ -109,8 +109,16 @@ export interface ComparisonResult {
 }
 
 // Mirrors app/integrations/playwright/breakpoints.py:STANDARD_BREAKPOINTS.
+// Kept separate from MATCH_FIGMA_BREAKPOINT: "run all breakpoints" only
+// iterates this set, same as create_scans_at_all_breakpoints on the backend.
 export const STANDARD_BREAKPOINTS = ['mobile', 'tablet', 'desktop'] as const
 export type Breakpoint = (typeof STANDARD_BREAKPOINTS)[number]
+
+// Mirrors app/integrations/playwright/breakpoints.py:MATCH_FIGMA_BREAKPOINT.
+// The recommended/default fidelity scan mode: viewport width tracks the
+// Figma frame's own width instead of a fixed preset.
+export const MATCH_FIGMA_BREAKPOINT = 'match_figma' as const
+export type ScanMode = Breakpoint | typeof MATCH_FIGMA_BREAKPOINT
 
 // Mirrors app/integrations/axe/types.py. Deterministic axe-core output —
 // no AI interpretation applied yet.
@@ -141,7 +149,7 @@ export interface Scan {
   project_id: string
   viewport_width: number
   viewport_height: number
-  breakpoint: Breakpoint | null
+  breakpoint: ScanMode | null
   production_screenshot_key: string
   diff_image_key: string
   comparison_result: ComparisonResult
@@ -159,7 +167,7 @@ export async function fetchScans(projectId: string): Promise<Scan[]> {
   return (await response.json()) as Scan[]
 }
 
-export async function createScan(projectId: string, breakpoint?: Breakpoint): Promise<Scan> {
+export async function createScan(projectId: string, breakpoint?: ScanMode): Promise<Scan> {
   const response = await fetch(`${API_BASE_URL}/api/v1/projects/${projectId}/scans`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

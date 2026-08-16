@@ -245,3 +245,80 @@ async def test_create_scans_at_all_breakpoints_returns_one_scan_per_breakpoint(
     assert response.status_code == 201, response.text
     scans = response.json()
     assert {scan["breakpoint"] for scan in scans} == {"mobile", "tablet", "desktop"}
+
+
+@respx.mock
+async def test_match_figma_scan_uses_figma_frame_width_with_full_page_capture(
+    monkeypatch, tmp_path, fixture_server
+) -> None:
+    """End-to-end (real browser) proof that match_figma mode:
+
+    1. uses the Figma node's own recorded width as the Playwright viewport
+       width (not a fixed preset), and
+    2. still does a full-page capture — the production screenshot's height
+       comes from the page's real (tall) content, not the 900px viewport
+       height used to get there.
+    """
+    monkeypatch.setattr(get_settings(), "figma_access_token", "test-token")
+    app.dependency_overrides[get_storage_backend] = lambda: LocalStorageBackend(root=tmp_path)
+
+    figma_width = 1234  # deliberately not any STANDARD_BREAKPOINTS width
+    nodes_response = {
+        "name": "My File",
+        "err": None,
+        "nodes": {
+            NODE_ID: {
+                "document": {
+                    "id": NODE_ID,
+                    "name": "Full page",
+                    "type": "FRAME",
+                    "absoluteBoundingBox": {"x": 0, "y": 0, "width": figma_width, "height": 6599},
+                    "children": [],
+                },
+                "styles": {},
+            }
+        },
+    }
+    respx.get(f"https://api.figma.com/v1/files/{FILE_KEY}/nodes").mock(
+        return_value=Response(200, json=nodes_response)
+    )
+    respx.get(f"https://api.figma.com/v1/images/{FILE_KEY}").mock(
+        return_value=Response(200, json=IMAGES_RESPONSE)
+    )
+    respx.get(IMAGE_URL).mock(return_value=Response(200, content=_png_bytes((100, 100), (0, 0, 0))))
+
+    host, port = fixture_server.server_address[:2]
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        project_response = await client.post(
+            "/api/v1/projects",
+            json={
+                "name": "Full page",
+                "figma_file_key": FILE_KEY,
+                "figma_node_id": NODE_ID,
+                "target_url": f"http://{host}:{port}/match_figma_fixture.html",
+                # No target_selector: this is the whole-page fidelity case
+                # match_figma is meant for, so full_page capture applies.
+            },
+        )
+        assert project_response.status_code == 201, project_response.text
+        project_id = project_response.json()["id"]
+
+        create_response = await client.post(
+            f"/api/v1/projects/{project_id}/scans", json={"breakpoint": "match_figma"}
+        )
+        assert create_response.status_code == 201, create_response.text
+        scan = create_response.json()
+
+        assert scan["breakpoint"] == "match_figma"
+        assert (scan["viewport_width"], scan["viewport_height"]) == (1234, 900)
+
+        production_response = await client.get(
+            f"/api/v1/projects/{project_id}/scans/{scan['id']}/production"
+        )
+        assert production_response.status_code == 200
+
+    captured = Image.open(BytesIO(production_response.content))
+    width, height = captured.size
+    assert width == 1234  # matched the Figma frame's width, not a preset
+    assert height >= 3000  # full-page capture: real content height, not the 900px viewport

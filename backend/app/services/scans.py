@@ -8,6 +8,7 @@ is a later phase; this is the deterministic capture-and-diff step it will
 eventually call as a tool.
 """
 
+from typing import Any
 from uuid import UUID, uuid4
 
 from sqlalchemy import select
@@ -15,7 +16,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.integrations.axe.scan import run_accessibility_scan
 from app.integrations.imaging.compare import compare_images
-from app.integrations.playwright.breakpoints import STANDARD_BREAKPOINTS
+from app.integrations.playwright.breakpoints import (
+    MATCH_FIGMA_BREAKPOINT,
+    MATCH_FIGMA_VIEWPORT_HEIGHT,
+    STANDARD_BREAKPOINTS,
+    Viewport,
+)
 from app.integrations.playwright.capture import capture_screenshot
 from app.integrations.storage.base import StorageBackend
 from app.models.project import Project
@@ -42,10 +48,7 @@ async def create_scan(
             "project has no Figma screenshot yet (registration may have failed)"
         )
 
-    if payload.breakpoint is not None:
-        viewport_width, viewport_height = STANDARD_BREAKPOINTS[payload.breakpoint]
-    else:
-        viewport_width, viewport_height = payload.viewport_width, payload.viewport_height
+    viewport_width, viewport_height = _resolve_viewport(payload, project)
 
     expected_png = storage.read(project.figma_screenshot_key)
 
@@ -116,3 +119,36 @@ async def get_scan(db: AsyncSession, project_id: UUID, scan_id: UUID) -> Scan | 
         select(Scan).where(Scan.id == scan_id, Scan.project_id == project_id)
     )
     return result.scalar_one_or_none()
+
+
+def _resolve_viewport(payload: ScanCreate, project: Project) -> Viewport:
+    if payload.breakpoint == MATCH_FIGMA_BREAKPOINT:
+        return _match_figma_viewport(project)
+    if payload.breakpoint is not None:
+        return STANDARD_BREAKPOINTS[payload.breakpoint]
+    return Viewport(payload.viewport_width, payload.viewport_height)
+
+
+def _match_figma_viewport(project: Project) -> Viewport:
+    """Width tracks the Figma node's own recorded width, not a fixed
+    preset (see MATCH_FIGMA_BREAKPOINT's docstring). Height is just a
+    normal browser viewport height — the full-page capture in
+    capture_screenshot is what captures the page's real height, not this
+    viewport, so it deliberately doesn't try to match the Figma frame's
+    height too.
+    """
+    # project.figma_data is stored via FigmaNode.model_dump(mode="json")
+    # with no by_alias=True (see app.services.projects), so the keys here
+    # are the model's plain field names (snake_case), not the camelCase
+    # aliases the API re-applies on the way out in ProjectRead responses.
+    node: dict[str, Any] = project.figma_data or {}
+    bounding_box: dict[str, Any] | None = node.get("absolute_bounding_box")
+    width = bounding_box.get("width") if bounding_box else None
+    if width is None:
+        raise ScanTargetNotReadyError(
+            "project's Figma node has no recorded width; can't use match_figma"
+        )
+    # Figma returns width as a float. round() (not int(), which always
+    # truncates toward zero) so we don't silently shave off a fractional
+    # pixel of the intended width.
+    return Viewport(round(width), MATCH_FIGMA_VIEWPORT_HEIGHT)

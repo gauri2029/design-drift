@@ -5,20 +5,23 @@ from pydantic import BaseModel, ConfigDict, model_validator
 
 from app.integrations.axe.types import AccessibilityReport
 from app.integrations.imaging.types import ComparisonResult
-from app.integrations.playwright.breakpoints import STANDARD_BREAKPOINTS
+from app.integrations.playwright.breakpoints import MATCH_FIGMA_BREAKPOINT, STANDARD_BREAKPOINTS
+
+_KNOWN_BREAKPOINTS = {MATCH_FIGMA_BREAKPOINT, *STANDARD_BREAKPOINTS}
 
 
 class ScanCreate(BaseModel):
     viewport_width: int = 1280
     viewport_height: int = 800
-    # Name of a standard breakpoint (see STANDARD_BREAKPOINTS) — overrides
+    # A standard breakpoint name (see STANDARD_BREAKPOINTS), or
+    # MATCH_FIGMA_BREAKPOINT ("match_figma") — overrides
     # viewport_width/viewport_height when set.
     breakpoint: str | None = None
 
     @model_validator(mode="after")
     def _validate_breakpoint(self) -> "ScanCreate":
-        if self.breakpoint is not None and self.breakpoint not in STANDARD_BREAKPOINTS:
-            known = ", ".join(sorted(STANDARD_BREAKPOINTS))
+        if self.breakpoint is not None and self.breakpoint not in _KNOWN_BREAKPOINTS:
+            known = ", ".join(sorted(_KNOWN_BREAKPOINTS))
             raise ValueError(f"unknown breakpoint {self.breakpoint!r}; expected one of {known}")
         return self
 
