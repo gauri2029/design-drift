@@ -30,6 +30,10 @@ class Scan(Base):
 
     viewport_width: Mapped[int] = mapped_column(nullable=False)
     viewport_height: Mapped[int] = mapped_column(nullable=False)
+    # Name of the standard breakpoint used (see
+    # app.integrations.playwright.breakpoints.STANDARD_BREAKPOINTS), if any.
+    # Null when the scan used a custom/default viewport instead.
+    breakpoint: Mapped[str | None] = mapped_column(nullable=True)
 
     # Storage keys (see app.integrations.storage) for the production
     # screenshot and the diff visualization. The Figma reference image is
@@ -37,6 +41,10 @@ class Scan(Base):
     production_screenshot_key: Mapped[str] = mapped_column(nullable=False)
     diff_image_key: Mapped[str] = mapped_column(nullable=False)
     comparison_result: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False)
+    # Mirrors app.integrations.axe.types.AccessibilityReport — deterministic
+    # axe-core violations against the same production capture, same JSONB
+    # rationale as comparison_result above.
+    accessibility_report: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

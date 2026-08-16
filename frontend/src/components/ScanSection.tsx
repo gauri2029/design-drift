@@ -9,15 +9,16 @@ interface ScanSectionProps {
 }
 
 export function ScanSection({ project }: ScanSectionProps) {
-  const { scans, status, error, selectedScan, selectScan, running, runScan } = useScans(project.id)
+  const { scans, status, error, selectedScan, selectScan, running, runScan, runAllBreakpoints } =
+    useScans(project.id)
 
   return (
     <section className="mt-8 space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
           Production comparison
         </h2>
-        <ScanRunner onRun={runScan} running={running} />
+        <ScanRunner onRun={runScan} onRunAllBreakpoints={runAllBreakpoints} running={running} />
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[240px_1fr]">

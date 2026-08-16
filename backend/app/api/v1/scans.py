@@ -40,6 +40,27 @@ async def create_scan(
     return ScanRead.model_validate(scan)
 
 
+@router.post("/breakpoints", response_model=list[ScanRead], status_code=status.HTTP_201_CREATED)
+async def create_scans_at_all_breakpoints(
+    project_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    storage: StorageBackend = Depends(get_storage_backend),
+) -> list[ScanRead]:
+    """Run one scan per standard breakpoint (mobile/tablet/desktop).
+
+    Scans that complete before a failure stay persisted — see
+    scans_service.create_scans_at_all_breakpoints's docstring.
+    """
+    project = await _get_project_or_404(project_id, db)
+    try:
+        scans = await scans_service.create_scans_at_all_breakpoints(db, project, storage)
+    except ScanTargetNotReadyError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except PlaywrightCaptureError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    return [ScanRead.model_validate(scan) for scan in scans]
+
+
 @router.get("", response_model=list[ScanRead])
 async def list_scans(project_id: UUID, db: AsyncSession = Depends(get_db)) -> list[ScanRead]:
     await _get_project_or_404(project_id, db)

@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
-import { createScan as createScanRequest, fetchScans, type Scan } from '../lib/api'
+import {
+  createScan as createScanRequest,
+  createScansAtAllBreakpoints,
+  fetchScans,
+  type Breakpoint,
+  type Scan,
+} from '../lib/api'
 
 type Status = 'idle' | 'loading' | 'ready' | 'error'
 
@@ -10,7 +16,8 @@ interface UseScansResult {
   selectedScan: Scan | null
   selectScan: (id: string) => void
   running: boolean
-  runScan: () => Promise<void>
+  runScan: (breakpoint?: Breakpoint) => Promise<void>
+  runAllBreakpoints: () => Promise<void>
 }
 
 export function useScans(projectId: string): UseScansResult {
@@ -45,12 +52,27 @@ export function useScans(projectId: string): UseScansResult {
     }
   }, [projectId])
 
-  const runScan = useCallback(async () => {
+  const runScan = useCallback(
+    async (breakpoint?: Breakpoint) => {
+      setRunning(true)
+      try {
+        const scan = await createScanRequest(projectId, breakpoint)
+        setScans((current) => [scan, ...current])
+        setSelectedId(scan.id)
+        setError(null)
+      } finally {
+        setRunning(false)
+      }
+    },
+    [projectId],
+  )
+
+  const runAllBreakpoints = useCallback(async () => {
     setRunning(true)
     try {
-      const scan = await createScanRequest(projectId)
-      setScans((current) => [scan, ...current])
-      setSelectedId(scan.id)
+      const newScans = await createScansAtAllBreakpoints(projectId)
+      setScans((current) => [...newScans, ...current])
+      setSelectedId(newScans[0]?.id ?? null)
       setError(null)
     } finally {
       setRunning(false)
@@ -65,5 +87,6 @@ export function useScans(projectId: string): UseScansResult {
     selectScan: setSelectedId,
     running,
     runScan,
+    runAllBreakpoints,
   }
 }

@@ -108,15 +108,44 @@ export interface ComparisonResult {
   mismatch_percentage: number
 }
 
+// Mirrors app/integrations/playwright/breakpoints.py:STANDARD_BREAKPOINTS.
+export const STANDARD_BREAKPOINTS = ['mobile', 'tablet', 'desktop'] as const
+export type Breakpoint = (typeof STANDARD_BREAKPOINTS)[number]
+
+// Mirrors app/integrations/axe/types.py. Deterministic axe-core output —
+// no AI interpretation applied yet.
+export interface AxeNode {
+  target: string[]
+  html: string | null
+  failureSummary: string | null
+}
+
+export interface AxeViolation {
+  id: string
+  impact: string | null
+  description: string
+  help: string
+  helpUrl: string
+  tags: string[]
+  nodes: AxeNode[]
+}
+
+export interface AccessibilityReport {
+  violations: AxeViolation[]
+  violation_count: number
+}
+
 // Mirrors app/schemas/scan.py:ScanRead.
 export interface Scan {
   id: string
   project_id: string
   viewport_width: number
   viewport_height: number
+  breakpoint: Breakpoint | null
   production_screenshot_key: string
   diff_image_key: string
   comparison_result: ComparisonResult
+  accessibility_report: AccessibilityReport
   created_at: string
 }
 
@@ -130,11 +159,11 @@ export async function fetchScans(projectId: string): Promise<Scan[]> {
   return (await response.json()) as Scan[]
 }
 
-export async function createScan(projectId: string): Promise<Scan> {
+export async function createScan(projectId: string, breakpoint?: Breakpoint): Promise<Scan> {
   const response = await fetch(`${API_BASE_URL}/api/v1/projects/${projectId}/scans`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({}),
+    body: JSON.stringify(breakpoint ? { breakpoint } : {}),
   })
 
   if (!response.ok) {
@@ -143,6 +172,19 @@ export async function createScan(projectId: string): Promise<Scan> {
   }
 
   return (await response.json()) as Scan
+}
+
+export async function createScansAtAllBreakpoints(projectId: string): Promise<Scan[]> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/projects/${projectId}/scans/breakpoints`, {
+    method: 'POST',
+  })
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { detail?: string } | null
+    throw new Error(body?.detail ?? `Failed to run breakpoint scans (${response.status})`)
+  }
+
+  return (await response.json()) as Scan[]
 }
 
 export function scanProductionUrl(projectId: string, scanId: string): string {

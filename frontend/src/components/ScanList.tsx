@@ -31,9 +31,18 @@ export function ScanList({ scans, selectedId, onSelect }: ScanListProps) {
                   : 'text-slate-700 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'
               }`}
             >
-              <span className="block font-medium">{new Date(scan.created_at).toLocaleString()}</span>
+              <span className="block font-medium">
+                {new Date(scan.created_at).toLocaleString()}
+                {scan.breakpoint && (
+                  <span className="ml-2 rounded-full bg-slate-200 px-2 py-0.5 text-xs font-normal text-slate-700 dark:bg-slate-700 dark:text-slate-200">
+                    {scan.breakpoint}
+                  </span>
+                )}
+              </span>
               <span className="block text-xs opacity-70">
-                {scan.comparison_result.mismatch_percentage.toFixed(2)}% pixel mismatch
+                {scan.comparison_result.mismatch_percentage.toFixed(2)}% pixel mismatch ·{' '}
+                {scan.accessibility_report.violation_count} a11y{' '}
+                {scan.accessibility_report.violation_count === 1 ? 'issue' : 'issues'}
               </span>
             </button>
           </li>

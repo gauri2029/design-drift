@@ -49,10 +49,69 @@ export function ScanDetail({ project, scan }: ScanDetailProps) {
           label="Production size"
           value={`${result.actual_dimensions.width} × ${result.actual_dimensions.height}`}
         />
-        <Detail label="Viewport" value={`${scan.viewport_width} × ${scan.viewport_height}`} />
+        <Detail
+          label="Viewport"
+          value={
+            scan.breakpoint
+              ? `${scan.viewport_width} × ${scan.viewport_height} (${scan.breakpoint})`
+              : `${scan.viewport_width} × ${scan.viewport_height}`
+          }
+        />
       </dl>
+
+      <AccessibilitySection report={scan.accessibility_report} />
     </div>
   )
+}
+
+function AccessibilitySection({ report }: { report: Scan['accessibility_report'] }) {
+  return (
+    <div>
+      <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
+        Accessibility ({report.violation_count} {report.violation_count === 1 ? 'issue' : 'issues'}
+        , via axe-core)
+      </h3>
+      {report.violations.length === 0 ? (
+        <p className="text-sm text-slate-500 dark:text-slate-400">No violations detected.</p>
+      ) : (
+        <ul className="space-y-2">
+          {report.violations.map((violation) => (
+            <li
+              key={violation.id}
+              className="rounded-md border border-slate-200 p-3 text-sm dark:border-slate-800"
+            >
+              <div className="flex items-center gap-2">
+                <span
+                  className={`rounded-full px-2 py-0.5 text-xs font-medium ${impactClasses(violation.impact)}`}
+                >
+                  {violation.impact ?? 'unknown'}
+                </span>
+                <span className="font-medium text-slate-900 dark:text-slate-100">
+                  {violation.help}
+                </span>
+              </div>
+              <p className="mt-1 text-slate-600 dark:text-slate-400">{violation.description}</p>
+              <p className="mt-1 text-xs text-slate-500 dark:text-slate-500">
+                {violation.nodes.length} element{violation.nodes.length === 1 ? '' : 's'} affected
+              </p>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+function impactClasses(impact: string | null): string {
+  switch (impact) {
+    case 'critical':
+    case 'serious':
+      return 'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300'
+    case 'moderate':
+      return 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300'
+    default:
+      return 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200'
+  }
 }
 
 function ImagePanel({ label, src }: { label: string; src: string }) {

@@ -13,7 +13,9 @@ from uuid import UUID, uuid4
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.integrations.axe.scan import run_accessibility_scan
 from app.integrations.imaging.compare import compare_images
+from app.integrations.playwright.breakpoints import STANDARD_BREAKPOINTS
 from app.integrations.playwright.capture import capture_screenshot
 from app.integrations.storage.base import StorageBackend
 from app.models.project import Project
@@ -40,16 +42,28 @@ async def create_scan(
             "project has no Figma screenshot yet (registration may have failed)"
         )
 
+    if payload.breakpoint is not None:
+        viewport_width, viewport_height = STANDARD_BREAKPOINTS[payload.breakpoint]
+    else:
+        viewport_width, viewport_height = payload.viewport_width, payload.viewport_height
+
     expected_png = storage.read(project.figma_screenshot_key)
 
     actual_png = await capture_screenshot(
         project.target_url,
         selector=project.target_selector,
-        viewport_width=payload.viewport_width,
-        viewport_height=payload.viewport_height,
+        viewport_width=viewport_width,
+        viewport_height=viewport_height,
     )
 
     comparison_result, diff_png = compare_images(expected_png, actual_png)
+
+    accessibility_report = await run_accessibility_scan(
+        project.target_url,
+        selector=project.target_selector,
+        viewport_width=viewport_width,
+        viewport_height=viewport_height,
+    )
 
     scan_id = uuid4()
     production_key = f"scans/{scan_id}/production.png"
@@ -60,16 +74,34 @@ async def create_scan(
     scan = Scan(
         id=scan_id,
         project_id=project.id,
-        viewport_width=payload.viewport_width,
-        viewport_height=payload.viewport_height,
+        viewport_width=viewport_width,
+        viewport_height=viewport_height,
+        breakpoint=payload.breakpoint,
         production_screenshot_key=production_key,
         diff_image_key=diff_key,
         comparison_result=comparison_result.model_dump(mode="json"),
+        accessibility_report=accessibility_report.model_dump(mode="json"),
     )
     db.add(scan)
     await db.commit()
     await db.refresh(scan)
     return scan
+
+
+async def create_scans_at_all_breakpoints(
+    db: AsyncSession, project: Project, storage: StorageBackend
+) -> list[Scan]:
+    """Run create_scan() once per STANDARD_BREAKPOINTS entry, sequentially.
+
+    Each scan commits independently (see create_scan's docstring), so a
+    failure partway through still leaves the earlier breakpoints' scans
+    persisted — this simply re-raises on the first failure rather than
+    attempting partial-failure bookkeeping.
+    """
+    return [
+        await create_scan(db, project, ScanCreate(breakpoint=name), storage)
+        for name in STANDARD_BREAKPOINTS
+    ]
 
 
 async def list_scans(db: AsyncSession, project_id: UUID) -> list[Scan]:

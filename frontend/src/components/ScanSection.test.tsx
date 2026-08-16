@@ -22,6 +22,7 @@ const CREATED_SCAN: Scan = {
   project_id: 'proj-1',
   viewport_width: 1280,
   viewport_height: 800,
+  breakpoint: null,
   production_screenshot_key: 'scans/scan-1/production.png',
   diff_image_key: 'scans/scan-1/diff.png',
   comparison_result: {
@@ -33,6 +34,7 @@ const CREATED_SCAN: Scan = {
     total_pixels: 20000,
     mismatch_percentage: 0.2,
   },
+  accessibility_report: { violations: [], violation_count: 0 },
   created_at: '2026-01-02T00:00:00Z',
 }
 

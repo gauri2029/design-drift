@@ -127,6 +127,8 @@ async def test_scan_lifecycle_with_matching_screenshot(
 
         assert scan["comparison_result"]["dimensions_match"] is True
         assert scan["comparison_result"]["mismatch_percentage"] == 0.0
+        assert scan["breakpoint"] is None
+        assert "violations" in scan["accessibility_report"]
         scan_id = scan["id"]
 
         get_response = await client.get(f"/api/v1/projects/{project_id}/scans/{scan_id}")
@@ -193,3 +195,53 @@ async def test_scan_returns_404_when_project_missing() -> None:
         )
 
     assert response.status_code == 404
+
+
+@respx.mock
+async def test_scan_at_named_breakpoint_uses_its_viewport(
+    monkeypatch, tmp_path, fixture_server
+) -> None:
+    monkeypatch.setattr(get_settings(), "figma_access_token", "test-token")
+    app.dependency_overrides[get_storage_backend] = lambda: LocalStorageBackend(root=tmp_path)
+    _mock_figma_endpoints(_png_bytes((200, 100), (255, 0, 0)))
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        project = await _create_project(client, fixture_server)
+        create_response = await client.post(
+            f"/api/v1/projects/{project['id']}/scans", json={"breakpoint": "mobile"}
+        )
+
+    assert create_response.status_code == 201, create_response.text
+    scan = create_response.json()
+    assert scan["breakpoint"] == "mobile"
+    assert (scan["viewport_width"], scan["viewport_height"]) == (375, 667)
+
+
+async def test_scan_create_rejects_unknown_breakpoint() -> None:
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/api/v1/projects/00000000-0000-0000-0000-000000000000/scans",
+            json={"breakpoint": "ultra-wide"},
+        )
+
+    assert response.status_code == 422
+
+
+@respx.mock
+async def test_create_scans_at_all_breakpoints_returns_one_scan_per_breakpoint(
+    monkeypatch, tmp_path, fixture_server
+) -> None:
+    monkeypatch.setattr(get_settings(), "figma_access_token", "test-token")
+    app.dependency_overrides[get_storage_backend] = lambda: LocalStorageBackend(root=tmp_path)
+    _mock_figma_endpoints(_png_bytes((200, 100), (255, 0, 0)))
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        project = await _create_project(client, fixture_server)
+        response = await client.post(f"/api/v1/projects/{project['id']}/scans/breakpoints")
+
+    assert response.status_code == 201, response.text
+    scans = response.json()
+    assert {scan["breakpoint"] for scan in scans} == {"mobile", "tablet", "desktop"}
