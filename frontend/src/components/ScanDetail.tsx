@@ -1,4 +1,5 @@
 import { projectScreenshotUrl, scanDiffUrl, scanProductionUrl, type Project, type Scan } from '../lib/api'
+import { ReviewPanel } from './ReviewPanel'
 
 interface ScanDetailProps {
   project: Project
@@ -60,6 +61,8 @@ export function ScanDetail({ project, scan }: ScanDetailProps) {
       </dl>
 
       <AccessibilitySection report={scan.accessibility_report} />
+
+      <ReviewPanel key={scan.id} projectId={project.id} scanId={scan.id} />
     </div>
   )
 }

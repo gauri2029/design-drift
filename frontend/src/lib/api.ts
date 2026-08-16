@@ -191,6 +191,71 @@ export function scanProductionUrl(projectId: string, scanId: string): string {
   return `${API_BASE_URL}/api/v1/projects/${projectId}/scans/${scanId}/production`
 }
 
+// Mirrors app/integrations/llm/types.py. Produced by one multimodal Claude
+// call — a judgment layer on top of the deterministic comparison_result
+// and accessibility_report above, not a replacement for either.
+export type FindingCategory =
+  | 'layout'
+  | 'spacing'
+  | 'typography'
+  | 'color'
+  | 'responsive'
+  | 'accessibility'
+  | 'component_structure'
+  | 'other'
+
+export type FindingSeverity = 'critical' | 'major' | 'minor' | 'cosmetic'
+
+export interface DesignFinding {
+  category: FindingCategory
+  severity: FindingSeverity
+  title: string
+  description: string
+  evidence: string
+  likely_area: string | null
+}
+
+export interface VisualReviewResult {
+  material_drift_detected: boolean
+  summary: string
+  findings: DesignFinding[]
+}
+
+// Mirrors app/schemas/review.py:ReviewRead.
+export interface Review {
+  id: string
+  scan_id: string
+  model: string
+  result: VisualReviewResult
+  created_at: string
+}
+
+export async function fetchReviews(projectId: string, scanId: string): Promise<Review[]> {
+  const response = await fetch(
+    `${API_BASE_URL}/api/v1/projects/${projectId}/scans/${scanId}/reviews`,
+  )
+
+  if (!response.ok) {
+    throw new Error(`Failed to list reviews (${response.status})`)
+  }
+
+  return (await response.json()) as Review[]
+}
+
+export async function createReview(projectId: string, scanId: string): Promise<Review> {
+  const response = await fetch(
+    `${API_BASE_URL}/api/v1/projects/${projectId}/scans/${scanId}/reviews`,
+    { method: 'POST' },
+  )
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { detail?: string } | null
+    throw new Error(body?.detail ?? `Failed to run AI review (${response.status})`)
+  }
+
+  return (await response.json()) as Review
+}
+
 export function scanDiffUrl(projectId: string, scanId: string): string {
   return `${API_BASE_URL}/api/v1/projects/${projectId}/scans/${scanId}/diff`
 }

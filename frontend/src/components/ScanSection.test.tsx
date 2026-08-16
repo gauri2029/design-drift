@@ -53,6 +53,9 @@ describe('ScanSection', () => {
         if (url.endsWith('/scans') && method === 'GET') {
           return { ok: true, json: async () => [] }
         }
+        if (url.endsWith('/reviews') && method === 'GET') {
+          return { ok: true, json: async () => [] }
+        }
         if (url.endsWith('/scans') && method === 'POST') {
           return { ok: true, json: async () => CREATED_SCAN }
         }
@@ -92,6 +95,9 @@ describe('ScanSection', () => {
         const method = init?.method ?? 'GET'
 
         if (url.endsWith('/scans') && method === 'GET') {
+          return { ok: true, json: async () => [] }
+        }
+        if (url.endsWith('/reviews') && method === 'GET') {
           return { ok: true, json: async () => [] }
         }
         if (url.endsWith('/scans') && method === 'POST') {
