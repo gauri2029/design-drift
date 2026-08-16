@@ -44,6 +44,7 @@ export interface Project {
   figma_file_key: string
   figma_node_id: string
   target_url: string
+  target_selector: string | null
   figma_data: FigmaNode | null
   figma_screenshot_key: string | null
   figma_fetched_at: string | null
@@ -56,6 +57,7 @@ export interface ProjectCreateInput {
   figma_file_key: string
   figma_node_id: string
   target_url: string
+  target_selector?: string
 }
 
 export async function fetchProjects(): Promise<Project[]> {
