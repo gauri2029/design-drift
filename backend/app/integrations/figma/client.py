@@ -49,9 +49,15 @@ class FigmaClient:
         file_key: str,
         node_id: str,
         image_format: str = "png",
-        scale: float = 2.0,
+        scale: float = 1.0,
     ) -> str:
-        """Fetch a render URL for `node_id` (Figma renders it server-side)."""
+        """Fetch a render URL for `node_id` (Figma renders it server-side).
+
+        Defaults to scale=1 (CSS-pixel-for-pixel) so the render's dimensions
+        are directly comparable to a Playwright screenshot taken with
+        device_scale_factor=1, without either side needing to be rescaled
+        before pixel-diffing (see app.integrations.imaging.compare_images).
+        """
         response = await self._client.get(
             f"/images/{file_key}",
             params={"ids": node_id, "format": image_format, "scale": scale},
