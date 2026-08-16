@@ -1,0 +1,86 @@
+"""Scan orchestration: capture the target app, diff against the project's
+stored Figma render, persist the result.
+
+Plain async service calling integrations directly — no LangGraph/agent
+involved yet, same as app.services.projects (see its module docstring).
+The Visual Comparison *agent* (with LLM-backed interpretation of the diff)
+is a later phase; this is the deterministic capture-and-diff step it will
+eventually call as a tool.
+"""
+
+from uuid import UUID, uuid4
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.integrations.imaging.compare import compare_images
+from app.integrations.playwright.capture import capture_screenshot
+from app.integrations.storage.base import StorageBackend
+from app.models.project import Project
+from app.models.scan import Scan
+from app.schemas.scan import ScanCreate
+
+
+class ScanTargetNotReadyError(Exception):
+    """Raised when a project hasn't finished its Figma fetch yet."""
+
+
+async def create_scan(
+    db: AsyncSession, project: Project, payload: ScanCreate, storage: StorageBackend
+) -> Scan:
+    """Capture `project.target_url`, diff it against the stored Figma
+    screenshot, and persist the result.
+
+    Everything that can fail (capture, diff) happens before any row is
+    added to the session, so a failure here simply raises without leaving
+    a half-written scan — there's nothing to roll back.
+    """
+    if project.figma_screenshot_key is None:
+        raise ScanTargetNotReadyError(
+            "project has no Figma screenshot yet (registration may have failed)"
+        )
+
+    expected_png = storage.read(project.figma_screenshot_key)
+
+    actual_png = await capture_screenshot(
+        project.target_url,
+        selector=project.target_selector,
+        viewport_width=payload.viewport_width,
+        viewport_height=payload.viewport_height,
+    )
+
+    comparison_result, diff_png = compare_images(expected_png, actual_png)
+
+    scan_id = uuid4()
+    production_key = f"scans/{scan_id}/production.png"
+    diff_key = f"scans/{scan_id}/diff.png"
+    storage.save(production_key, actual_png)
+    storage.save(diff_key, diff_png)
+
+    scan = Scan(
+        id=scan_id,
+        project_id=project.id,
+        viewport_width=payload.viewport_width,
+        viewport_height=payload.viewport_height,
+        production_screenshot_key=production_key,
+        diff_image_key=diff_key,
+        comparison_result=comparison_result.model_dump(mode="json"),
+    )
+    db.add(scan)
+    await db.commit()
+    await db.refresh(scan)
+    return scan
+
+
+async def list_scans(db: AsyncSession, project_id: UUID) -> list[Scan]:
+    result = await db.execute(
+        select(Scan).where(Scan.project_id == project_id).order_by(Scan.created_at.desc())
+    )
+    return list(result.scalars().all())
+
+
+async def get_scan(db: AsyncSession, project_id: UUID, scan_id: UUID) -> Scan | None:
+    result = await db.execute(
+        select(Scan).where(Scan.id == scan_id, Scan.project_id == project_id)
+    )
+    return result.scalar_one_or_none()
