@@ -37,6 +37,12 @@ target-version = "py312"
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "ASYNC"]
 
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI's Depends()/Query()/Body() are meant to be called in argument
+# defaults — that's how FastAPI's DI system recognizes them (B008 otherwise
+# flags this as a mutable-default footgun, which doesn't apply here).
+extend-immutable-calls = ["fastapi.Depends", "fastapi.Query", "fastapi.Path", "fastapi.Body"]
+
 [tool.mypy]
 python_version = "3.12"
 strict = true
@@ -44,4 +50,10 @@ plugins = ["pydantic.mypy"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+# Share one event loop across the whole test session: the app's async DB
+# engine (backend/app/db/session.py) is a module-level singleton with a
+# pooled connection, and asyncpg connections can't be reused across
+# different event loops (function-scoped loops break on the 2nd test).
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"
 testpaths = ["tests"]
