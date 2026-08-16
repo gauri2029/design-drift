@@ -2,8 +2,14 @@ import pytest
 import respx
 from httpx import Response
 
+import app.integrations.figma.cache as cache_module
+from app.integrations.figma.cache import InMemoryTTLCache
 from app.integrations.figma.client import FigmaClient
-from app.integrations.figma.exceptions import FigmaAPIError, FigmaNodeNotFoundError
+from app.integrations.figma.exceptions import (
+    FigmaAPIError,
+    FigmaNodeNotFoundError,
+    FigmaRateLimitError,
+)
 
 FILE_KEY = "abc123"
 NODE_ID = "1:23"
@@ -163,4 +169,84 @@ async def test_download_image_returns_bytes() -> None:
     data = await client.download_image(image_url)
 
     assert data == b"fake-png-bytes"
+    await client.aclose()
+
+
+@respx.mock
+async def test_get_node_uses_cache_on_second_call() -> None:
+    route = respx.get(f"https://api.figma.com/v1/files/{FILE_KEY}/nodes").mock(
+        return_value=Response(200, json=NODES_RESPONSE)
+    )
+    client = FigmaClient(access_token="token123", cache=InMemoryTTLCache())
+
+    first = await client.get_node(FILE_KEY, NODE_ID)
+    second = await client.get_node(FILE_KEY, NODE_ID)
+
+    assert route.call_count == 1  # second call was served from cache
+    assert second.name == first.name == "Button"
+    await client.aclose()
+
+
+@respx.mock
+async def test_get_node_cache_expires_after_ttl(monkeypatch) -> None:
+    now = [1000.0]
+    monkeypatch.setattr(cache_module.time, "monotonic", lambda: now[0])
+
+    route = respx.get(f"https://api.figma.com/v1/files/{FILE_KEY}/nodes").mock(
+        return_value=Response(200, json=NODES_RESPONSE)
+    )
+    client = FigmaClient(access_token="token123", cache=InMemoryTTLCache(), cache_ttl_seconds=600)
+
+    await client.get_node(FILE_KEY, NODE_ID)
+    assert route.call_count == 1
+
+    now[0] += 601  # past the 10-minute TTL
+    await client.get_node(FILE_KEY, NODE_ID)
+
+    assert route.call_count == 2  # cache had expired, so this was a real second call
+    await client.aclose()
+
+
+@respx.mock
+async def test_get_image_url_uses_cache_on_second_call() -> None:
+    route = respx.get(f"https://api.figma.com/v1/images/{FILE_KEY}").mock(
+        return_value=Response(200, json=IMAGES_RESPONSE)
+    )
+    client = FigmaClient(access_token="token123", cache=InMemoryTTLCache())
+
+    first = await client.get_image_url(FILE_KEY, NODE_ID)
+    second = await client.get_image_url(FILE_KEY, NODE_ID)
+
+    assert route.call_count == 1
+    assert first == second
+    await client.aclose()
+
+
+@respx.mock
+async def test_get_node_raises_rate_limit_error_with_retry_after() -> None:
+    respx.get(f"https://api.figma.com/v1/files/{FILE_KEY}/nodes").mock(
+        return_value=Response(429, headers={"Retry-After": "30"}, text="Too Many Requests")
+    )
+    client = FigmaClient(access_token="token123", cache=InMemoryTTLCache())
+
+    with pytest.raises(FigmaRateLimitError, match="Figma rate limit reached") as exc_info:
+        await client.get_node(FILE_KEY, NODE_ID)
+
+    assert exc_info.value.retry_after_seconds == 30.0
+    assert "retry after 30s" in str(exc_info.value)
+    await client.aclose()
+
+
+@respx.mock
+async def test_get_node_raises_rate_limit_error_without_retry_after_header() -> None:
+    respx.get(f"https://api.figma.com/v1/files/{FILE_KEY}/nodes").mock(
+        return_value=Response(429, text="Too Many Requests")
+    )
+    client = FigmaClient(access_token="token123", cache=InMemoryTTLCache())
+
+    with pytest.raises(FigmaRateLimitError) as exc_info:
+        await client.get_node(FILE_KEY, NODE_ID)
+
+    assert exc_info.value.retry_after_seconds is None
+    assert str(exc_info.value) == "Figma rate limit reached. Please retry shortly."
     await client.aclose()

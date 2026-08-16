@@ -24,6 +24,10 @@ class Project(Base):
     figma_file_key: Mapped[str] = mapped_column(nullable=False)
     figma_node_id: Mapped[str] = mapped_column(nullable=False)
     target_url: Mapped[str] = mapped_column(nullable=False)
+    # CSS selector on `target_url` that corresponds to the Figma node above.
+    # Optional: if unset, a scan screenshots the full page instead — fine
+    # for a whole-page Figma frame, less meaningful for a single component.
+    target_selector: Mapped[str | None] = mapped_column(nullable=True)
 
     # Raw-ish node data from the Figma API (name, styles, layout, hierarchy),
     # serialized from app.integrations.figma.types.FigmaNode.

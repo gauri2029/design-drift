@@ -8,6 +8,7 @@ FastAPI + SQLAlchemy (async) + PostgreSQL. Python 3.12+, managed with
 ```bash
 cd backend
 uv sync                      # creates .venv, installs deps + dev deps
+uv run playwright install chromium   # browser binary for production capture/scans
 ```
 
 Copy `../.env.example` to `../.env` (repo root) and adjust as needed —
@@ -41,7 +42,8 @@ Health check: `GET http://localhost:8000/api/v1/health`
 ## Test / lint / typecheck
 
 ```bash
-uv run pytest        # API tests hit the real local Postgres above
+uv run pytest        # API tests hit the real local Postgres above; scan
+                      # tests also launch a real (headless) browser
 uv run ruff check .
 uv run mypy app
 ```
@@ -59,6 +61,7 @@ uv run alembic downgrade -1                        # roll back one revision
 See `../docs/architecture.md` for the full rationale. In short:
 `api/` (routers) → `services/` (logic) → `db/`/`models/` (persistence),
 with request/response shapes in `schemas/` and typed models in
-`integrations/` (currently `figma/` and `storage/`). `agents/`, `graph/`,
-`tools/`, `evals/` are added starting Phase 3+ when LangGraph work begins —
-they don't exist yet on purpose.
+`integrations/` (`figma/`, `storage/`, `playwright/` — production capture,
+`imaging/` — deterministic pixel diffing). `agents/`, `graph/`, `tools/`,
+`evals/` are added starting Phase 3+ when LangGraph work begins — they
+don't exist yet on purpose.

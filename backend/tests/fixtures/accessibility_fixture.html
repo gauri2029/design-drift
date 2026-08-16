@@ -1,0 +1,16 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>accessibility fixture</title>
+  </head>
+  <body>
+    <!-- Outside #card: missing alt text (image-alt violation). -->
+    <img src="x.jpg" />
+
+    <div id="card">
+      <!-- Inside #card: empty button, no accessible name (button-name violation). -->
+      <button></button>
+    </div>
+  </body>
+</html>

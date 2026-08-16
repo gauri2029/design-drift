@@ -1,0 +1,25 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>match figma fixture</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+      }
+      /* No fixed width, so the rendered page width tracks whatever
+         viewport width Playwright is given — needed to prove match_figma's
+         width resolution actually changes what gets captured. Much taller
+         than any viewport height we use, so a full-page capture's height
+         can only come from the page's real content height, not the
+         viewport. */
+      body {
+        min-height: 3000px;
+        background: #ffffff;
+      }
+    </style>
+  </head>
+  <body></body>
+</html>

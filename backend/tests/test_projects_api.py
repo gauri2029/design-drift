@@ -44,6 +44,7 @@ CREATE_PAYLOAD = {
     "figma_file_key": FILE_KEY,
     "figma_node_id": NODE_ID,
     "target_url": "https://example.com",
+    "target_selector": "#hero-cta",
 }
 
 
@@ -80,6 +81,7 @@ async def test_project_lifecycle(monkeypatch, tmp_path) -> None:
         assert body["name"] == "Marketing homepage"
         assert body["figma_data"]["name"] == "Button"
         assert body["figma_screenshot_key"] is not None
+        assert body["target_selector"] == "#hero-cta"
         project_id = body["id"]
 
         get_response = await client.get(f"/api/v1/projects/{project_id}")

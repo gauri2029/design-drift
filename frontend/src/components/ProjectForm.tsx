@@ -11,6 +11,7 @@ const emptyForm: ProjectCreateInput = {
   figma_file_key: '',
   figma_node_id: '',
   target_url: '',
+  target_selector: '',
 }
 
 export function ProjectForm({ onCreate, submitting }: ProjectFormProps) {
@@ -26,7 +27,8 @@ export function ProjectForm({ onCreate, submitting }: ProjectFormProps) {
     event.preventDefault()
     setFormError(null)
     try {
-      await onCreate(form)
+      const trimmedSelector = form.target_selector?.trim()
+      await onCreate({ ...form, target_selector: trimmedSelector || undefined })
       setForm(emptyForm)
     } catch (err) {
       setFormError(err instanceof Error ? err.message : 'Failed to create project')
@@ -62,6 +64,13 @@ export function ProjectForm({ onCreate, submitting }: ProjectFormProps) {
         placeholder="http://localhost:3000"
         type="url"
       />
+      <Field
+        label="Target selector (optional)"
+        value={form.target_selector ?? ''}
+        onChange={handleChange('target_selector')}
+        placeholder="#hero-cta"
+        required={false}
+      />
 
       {formError && (
         <p role="alert" className="text-sm text-red-600 dark:text-red-400">
@@ -86,9 +95,10 @@ interface FieldProps {
   onChange: (event: ChangeEvent<HTMLInputElement>) => void
   placeholder?: string
   type?: string
+  required?: boolean
 }
 
-function Field({ label, value, onChange, placeholder, type = 'text' }: FieldProps) {
+function Field({ label, value, onChange, placeholder, type = 'text', required = true }: FieldProps) {
   return (
     <label className="block text-sm">
       <span className="mb-1 block font-medium text-slate-700 dark:text-slate-300">{label}</span>
@@ -97,7 +107,7 @@ function Field({ label, value, onChange, placeholder, type = 'text' }: FieldProp
         value={value}
         onChange={onChange}
         placeholder={placeholder}
-        required
+        required={required}
         className="w-full rounded-md border border-slate-300 px-3 py-1.5 text-slate-900 shadow-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
       />
     </label>

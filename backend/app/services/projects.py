@@ -40,6 +40,7 @@ async def create_project(
         figma_file_key=payload.figma_file_key,
         figma_node_id=payload.figma_node_id,
         target_url=str(payload.target_url),
+        target_selector=payload.target_selector,
     )
     db.add(project)
     await db.flush()  # assigns project.id, used below as a storage key

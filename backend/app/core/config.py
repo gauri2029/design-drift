@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     figma_access_token: str = ""
     figma_api_base_url: str = "https://api.figma.com/v1"
 
+    anthropic_api_key: str = ""
+    anthropic_model: str = "claude-opus-5"
+
     @property
     def cors_origin_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
