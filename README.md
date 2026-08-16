@@ -14,8 +14,11 @@ multimodal reasoning, tool calling, human-in-the-loop control, RAG, and
 evaluation — layered on top of a conventional, production-shaped
 full-stack app (FastAPI + PostgreSQL + React/TypeScript).
 
-> **Status:** Phase 0 — repository scaffold and health-check vertical
-> slice. No Figma, LLM, or agent integration yet. See
+> **Status:** Phase 1 — Figma integration. A project (Figma file/node +
+> target app URL) can be registered via the API or the frontend panel; the
+> backend fetches and stores the node's styles/layout/hierarchy and a
+> rendered screenshot from the real Figma REST API. No Playwright,
+> visual/production comparison, or LLM/agent reasoning yet — see
 > [`docs/architecture.md`](docs/architecture.md) for the target
 > architecture and [`docs/principles.md`](docs/principles.md) for the
 > engineering ground rules this project follows.
@@ -38,6 +41,9 @@ Prerequisites: Docker, Node.js 20+, Python 3.12+, [uv](https://docs.astral.sh/uv
 
 ```bash
 cp .env.example .env
+# Set FIGMA_ACCESS_TOKEN in .env to fetch real Figma data (a personal
+# access token: https://www.figma.com/developers/api#access-tokens).
+# Project registration works without it but returns a 502.
 
 # Start PostgreSQL (and, once added, other infra) via Docker
 docker compose -f infra/docker/docker-compose.yml up -d postgres
@@ -45,6 +51,7 @@ docker compose -f infra/docker/docker-compose.yml up -d postgres
 # Backend
 cd backend
 uv sync
+uv run alembic upgrade head
 uv run uvicorn app.main:app --reload
 
 # Frontend (separate terminal)
