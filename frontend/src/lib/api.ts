@@ -88,3 +88,67 @@ export async function createProject(input: ProjectCreateInput): Promise<Project>
 export function projectScreenshotUrl(projectId: string): string {
   return `${API_BASE_URL}/api/v1/projects/${projectId}/figma/screenshot`
 }
+
+export interface ImageDimensions {
+  width: number
+  height: number
+}
+
+// Mirrors app/integrations/imaging/types.py:ComparisonResult. A raw pixel
+// mismatch percentage from deterministic image diffing — NOT an AI-judged
+// design fidelity score. Categorized findings/severity require visual
+// reasoning, which is a later phase.
+export interface ComparisonResult {
+  expected_dimensions: ImageDimensions
+  actual_dimensions: ImageDimensions
+  dimensions_match: boolean
+  compared_dimensions: ImageDimensions
+  mismatched_pixels: number
+  total_pixels: number
+  mismatch_percentage: number
+}
+
+// Mirrors app/schemas/scan.py:ScanRead.
+export interface Scan {
+  id: string
+  project_id: string
+  viewport_width: number
+  viewport_height: number
+  production_screenshot_key: string
+  diff_image_key: string
+  comparison_result: ComparisonResult
+  created_at: string
+}
+
+export async function fetchScans(projectId: string): Promise<Scan[]> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/projects/${projectId}/scans`)
+
+  if (!response.ok) {
+    throw new Error(`Failed to list scans (${response.status})`)
+  }
+
+  return (await response.json()) as Scan[]
+}
+
+export async function createScan(projectId: string): Promise<Scan> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/projects/${projectId}/scans`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  })
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { detail?: string } | null
+    throw new Error(body?.detail ?? `Failed to run scan (${response.status})`)
+  }
+
+  return (await response.json()) as Scan
+}
+
+export function scanProductionUrl(projectId: string, scanId: string): string {
+  return `${API_BASE_URL}/api/v1/projects/${projectId}/scans/${scanId}/production`
+}
+
+export function scanDiffUrl(projectId: string, scanId: string): string {
+  return `${API_BASE_URL}/api/v1/projects/${projectId}/scans/${scanId}/diff`
+}

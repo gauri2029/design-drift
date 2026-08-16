@@ -43,6 +43,9 @@ describe('ProjectsPanel', () => {
         if (url.endsWith('/api/v1/projects') && method === 'POST') {
           return { ok: true, json: async () => CREATED_PROJECT }
         }
+        if (url.endsWith('/scans') && method === 'GET') {
+          return { ok: true, json: async () => [] }
+        }
         throw new Error(`Unexpected fetch: ${method} ${url}`)
       }),
     )
@@ -64,6 +67,9 @@ describe('ProjectsPanel', () => {
 
     const image = screen.getByRole('img', { name: /figma render of button/i })
     expect(image.getAttribute('src')).toContain('/api/v1/projects/proj-1/figma/screenshot')
+
+    expect(await screen.findByRole('button', { name: /run scan/i })).toBeInTheDocument()
+    expect(await screen.findByText(/no scans yet/i)).toBeInTheDocument()
   })
 
   it('shows the backend list error when loading projects fails', async () => {
