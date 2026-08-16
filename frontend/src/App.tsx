@@ -1,4 +1,5 @@
 import { HealthStatus } from './components/HealthStatus'
+import { ProjectsPanel } from './components/ProjectsPanel'
 
 function App() {
   return (
@@ -12,15 +13,19 @@ function App() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-6xl px-6 py-16">
+      <main className="mx-auto max-w-6xl px-6 py-10">
         <h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-100">
           Autonomous AI Design QA &amp; Remediation
         </h1>
         <p className="mt-2 max-w-xl text-slate-600 dark:text-slate-400">
-          Phase 0 vertical slice: the dashboard shell is up and talking to the
-          backend. Project workspaces, Figma/production comparison, and the
-          agent workflow land in later phases.
+          Phase 1: register a project (a Figma node + a target app URL) and
+          fetch its design data. Production comparison and the agent
+          workflow land in later phases.
         </p>
+
+        <div className="mt-8">
+          <ProjectsPanel />
+        </div>
       </main>
     </div>
   )

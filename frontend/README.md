@@ -34,5 +34,7 @@ npm run typecheck
 
 - `src/components/` — UI components (dashboard, comparison views, overlays
   — grows through later phases).
+- `src/hooks/` — data-fetching/state hooks (e.g. `useProjects`), kept
+  separate from components once a component needs more than local state.
 - `src/lib/` — API client and other framework-agnostic helpers.
 - `src/test/setup.ts` — Vitest + Testing Library setup.

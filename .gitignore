@@ -28,7 +28,7 @@ coverage/
 samples/**/screenshots/
 samples/**/*.png
 !samples/**/.gitkeep
-storage/
+/storage/
 
 # --- OS / editor ---
 .DS_Store

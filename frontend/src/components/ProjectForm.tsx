@@ -1,0 +1,105 @@
+import { useState, type ChangeEvent, type FormEvent } from 'react'
+import type { ProjectCreateInput } from '../lib/api'
+
+interface ProjectFormProps {
+  onCreate: (input: ProjectCreateInput) => Promise<void>
+  submitting: boolean
+}
+
+const emptyForm: ProjectCreateInput = {
+  name: '',
+  figma_file_key: '',
+  figma_node_id: '',
+  target_url: '',
+}
+
+export function ProjectForm({ onCreate, submitting }: ProjectFormProps) {
+  const [form, setForm] = useState<ProjectCreateInput>(emptyForm)
+  const [formError, setFormError] = useState<string | null>(null)
+
+  const handleChange =
+    (field: keyof ProjectCreateInput) => (event: ChangeEvent<HTMLInputElement>) => {
+      setForm((current) => ({ ...current, [field]: event.target.value }))
+    }
+
+  const handleSubmit = async (event: FormEvent) => {
+    event.preventDefault()
+    setFormError(null)
+    try {
+      await onCreate(form)
+      setForm(emptyForm)
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : 'Failed to create project')
+    }
+  }
+
+  return (
+    <form
+      onSubmit={(event) => void handleSubmit(event)}
+      className="space-y-4 rounded-lg border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900"
+    >
+      <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+        Register a project
+      </h2>
+
+      <Field label="Name" value={form.name} onChange={handleChange('name')} placeholder="Marketing homepage" />
+      <Field
+        label="Figma file key"
+        value={form.figma_file_key}
+        onChange={handleChange('figma_file_key')}
+        placeholder="AbC123XyZ"
+      />
+      <Field
+        label="Figma node id"
+        value={form.figma_node_id}
+        onChange={handleChange('figma_node_id')}
+        placeholder="1:23"
+      />
+      <Field
+        label="Target app URL"
+        value={form.target_url}
+        onChange={handleChange('target_url')}
+        placeholder="http://localhost:3000"
+        type="url"
+      />
+
+      {formError && (
+        <p role="alert" className="text-sm text-red-600 dark:text-red-400">
+          {formError}
+        </p>
+      )}
+
+      <button
+        type="submit"
+        disabled={submitting}
+        className="w-full rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-300"
+      >
+        {submitting ? 'Fetching from Figma…' : 'Register project'}
+      </button>
+    </form>
+  )
+}
+
+interface FieldProps {
+  label: string
+  value: string
+  onChange: (event: ChangeEvent<HTMLInputElement>) => void
+  placeholder?: string
+  type?: string
+}
+
+function Field({ label, value, onChange, placeholder, type = 'text' }: FieldProps) {
+  return (
+    <label className="block text-sm">
+      <span className="mb-1 block font-medium text-slate-700 dark:text-slate-300">{label}</span>
+      <input
+        type={type}
+        value={value}
+        onChange={onChange}
+        placeholder={placeholder}
+        required
+        className="w-full rounded-md border border-slate-300 px-3 py-1.5 text-slate-900 shadow-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+      />
+    </label>
+  )
+}

@@ -19,9 +19,14 @@ class Settings(BaseSettings):
     backend_port: int = 8000
     cors_origins: str = "http://localhost:5173"
 
-    database_url: str = (
-        "postgresql+asyncpg://design_drift:design_drift@localhost:5432/design_drift"
-    )
+    database_url: str = "postgresql+asyncpg://design_drift:design_drift@localhost:5432/design_drift"
+
+    # Root directory for locally-stored artifacts (screenshots, renders).
+    # Relative to backend/'s working directory, so it lands at repo-root/storage.
+    storage_root: str = "../storage"
+
+    figma_access_token: str = ""
+    figma_api_base_url: str = "https://api.figma.com/v1"
 
     @property
     def cors_origin_list(self) -> list[str]:
