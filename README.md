@@ -14,14 +14,17 @@ multimodal reasoning, tool calling, human-in-the-loop control, RAG, and
 evaluation — layered on top of a conventional, production-shaped
 full-stack app (FastAPI + PostgreSQL + React/TypeScript).
 
-> **Status:** Phase 1 — Figma integration. A project (Figma file/node +
-> target app URL) can be registered via the API or the frontend panel; the
-> backend fetches and stores the node's styles/layout/hierarchy and a
-> rendered screenshot from the real Figma REST API. No Playwright,
-> visual/production comparison, or LLM/agent reasoning yet — see
-> [`docs/architecture.md`](docs/architecture.md) for the target
-> architecture and [`docs/principles.md`](docs/principles.md) for the
-> engineering ground rules this project follows.
+> **Status:** Phase 2 — production comparison. A registered project can be
+> scanned: Playwright captures the target app (full page or a specific
+> element via `target_selector`), and a deterministic pixel diff
+> (`pixelmatch`) compares it against the project's stored Figma screenshot.
+> Results (raw mismatch %, dimensions, a diff image) persist per scan and
+> render side-by-side in the frontend. No LLM/agent reasoning yet — the
+> mismatch percentage is explicitly a raw pixel-diff number, not a design
+> fidelity score; that judgment arrives with the Visual Comparison agent in
+> a later phase. See [`docs/architecture.md`](docs/architecture.md) for the
+> target architecture and [`docs/principles.md`](docs/principles.md) for
+> the engineering ground rules this project follows.
 
 ## Repository layout
 
@@ -51,6 +54,7 @@ docker compose -f infra/docker/docker-compose.yml up -d postgres
 # Backend
 cd backend
 uv sync
+uv run playwright install chromium   # browser for production screenshots
 uv run alembic upgrade head
 uv run uvicorn app.main:app --reload
 
