@@ -17,6 +17,8 @@ dependencies = [
     "playwright>=1.62.0",
     "axe-playwright-python>=0.1.8",
     "anthropic>=0.122.0",
+    "langgraph>=1.2.11",
+    "google-genai>=2.18.1",
 ]
 
 [dependency-groups]

@@ -31,6 +31,13 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     anthropic_model: str = "claude-opus-5"
 
+    # Which provider backs app.integrations.llm.client.generate_structured():
+    # "anthropic" or "gemini". Gemini's free tier is the low/no-cost dev
+    # option (see app.integrations.llm.gemini_client's docstring).
+    llm_provider: str = "anthropic"
+    gemini_api_key: str = ""
+    gemini_model: str = "gemini-2.5-flash"
+
     @property
     def cors_origin_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]

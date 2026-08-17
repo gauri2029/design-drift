@@ -52,8 +52,8 @@ backend/app/
 ├── models/       SQLAlchemy ORM models          (added when we persist data)
 ├── schemas/      Pydantic request/response models (added as endpoints need them)
 ├── services/     Business logic, orchestration    (added when logic exists beyond routing)
-├── agents/       LangGraph runtime agents          (not yet built — Phase 3+)
-├── graph/        LangGraph graph definition/state   (not yet built — Phase 3+)
+├── agents/       LangGraph runtime agents          (Design Analysis Agent + Supervisor built — Phase 3)
+├── graph/        LangGraph graph definition/state   (Design Analysis workflow built — Phase 3)
 ├── tools/        Agent tool implementations          (not yet built — Phase 3+)
 ├── integrations/ Figma, Playwright, axe-core clients  (not yet built — Phase 1+)
 └── evals/        AI evaluation harness                (not yet built — Phase 8)
@@ -65,12 +65,19 @@ straightforward query patterns, SQLAlchemy sessions used directly from
 `services/` are simpler to read and debug. We'll introduce a repository
 layer only if query logic starts duplicating across services.
 
-## Runtime multi-agent workflow (not yet built)
+## Runtime multi-agent workflow (Design Analysis vertical slice built)
 
 Design Drift's own agents (distinct from the Claude Code agents used to
 *build* this repo — see `.claude/agents/`) are implemented as LangGraph
 nodes operating on one shared, structured state object — not by passing
 free-form natural-language messages between agents.
+
+Only the Supervisor + Design Analysis Agent are wired up so far
+(`app/graph/workflow.py`, `app/agents/`): `START -> supervisor ->
+(design_analysis -> supervisor)* -> END`, exposed via `POST
+/api/v1/projects/{project_id}/design-analysis`. The diagram below is the
+target shape once the remaining agents land — each new one extends the
+Supervisor's routing rather than inventing its own graph.
 
 ```
 START

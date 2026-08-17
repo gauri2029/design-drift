@@ -1,35 +1,20 @@
-"""Thin wrapper around Claude's multimodal structured-output call.
+"""Picks which provider backs `generate_structured()` — the one function
+every LLM call site in this codebase imports (app.services.reviews,
+app.agents.design_analysis).
 
-Deliberately thin, not a generic "call_llm()" abstraction: the system
-prompt, the multimodal content blocks, and the actual SDK call are all
-visible here rather than hidden behind a framework, since this project
-exists partly to teach these concepts (docs/principles.md #3).
-
-Uses `client.messages.parse()` — the Anthropic SDK's structured-output
-helper. It derives a JSON schema from `output_format` (a Pydantic model),
-sends it as `output_config.format`, and validates the model's response
-against that schema client-side before returning it as `.parsed_output`.
+Two providers, not a formal Protocol/interface: anthropic_client.py and
+gemini_client.py already share an identical signature and are each simple
+enough to read end to end (docs/principles.md #3 — this project avoids
+provider-abstraction machinery until there's a real reason for it, per
+docs/principles.md #6). This module is the entire "abstraction" — a
+five-line if/else keyed off `settings.llm_provider`, so callers don't need
+to know or care which provider is configured.
 """
 
-import base64
-
-from anthropic import APIError, AsyncAnthropic
-from anthropic.types import ImageBlockParam, MessageParam, TextBlockParam
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel
 
 from app.core.config import get_settings
-from app.integrations.llm.exceptions import LLMNotConfiguredError, LLMResponseError
-
-
-def _image_content_block(png_bytes: bytes) -> ImageBlockParam:
-    return {
-        "type": "image",
-        "source": {
-            "type": "base64",
-            "media_type": "image/png",
-            "data": base64.standard_b64encode(png_bytes).decode("ascii"),
-        },
-    }
+from app.integrations.llm import anthropic_client, gemini_client
 
 
 async def generate_structured[ResultT: BaseModel](
@@ -39,33 +24,11 @@ async def generate_structured[ResultT: BaseModel](
     images: list[bytes],
     output_format: type[ResultT],
 ) -> ResultT:
-    """Make one multimodal call to Claude, validated against `output_format`.
-
-    Content blocks are ordered images-then-text, per Anthropic's vision
-    guidance (an image referenced by later text should precede it).
-    """
     settings = get_settings()
-    if not settings.anthropic_api_key:
-        raise LLMNotConfiguredError("ANTHROPIC_API_KEY is not configured")
-
-    content: list[ImageBlockParam | TextBlockParam] = [
-        _image_content_block(png) for png in images
-    ]
-    content.append({"type": "text", "text": text})
-    messages: list[MessageParam] = [{"role": "user", "content": content}]
-
-    async with AsyncAnthropic(api_key=settings.anthropic_api_key) as client:
-        try:
-            response = await client.messages.parse(
-                model=settings.anthropic_model,
-                max_tokens=4096,
-                system=system,
-                messages=messages,
-                output_format=output_format,
-            )
-        except (APIError, ValidationError) as exc:
-            raise LLMResponseError(f"Claude request failed: {exc}") from exc
-
-    if response.parsed_output is None:
-        raise LLMResponseError("model response did not match the expected schema")
-    return response.parsed_output
+    if settings.llm_provider == "anthropic":
+        return await anthropic_client.generate_structured(
+            system=system, text=text, images=images, output_format=output_format
+        )
+    return await gemini_client.generate_structured(
+        system=system, text=text, images=images, output_format=output_format
+    )
