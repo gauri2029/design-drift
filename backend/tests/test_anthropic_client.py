@@ -15,7 +15,7 @@ from httpx import Response
 from pydantic import BaseModel
 
 from app.core.config import get_settings
-from app.integrations.llm.client import generate_structured
+from app.integrations.llm.anthropic_client import generate_structured
 from app.integrations.llm.exceptions import LLMNotConfiguredError, LLMResponseError
 
 

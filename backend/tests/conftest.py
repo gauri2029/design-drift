@@ -1,5 +1,6 @@
 import pytest
 
+from app.core.config import get_settings
 from app.integrations.figma.cache import get_figma_cache
 
 
@@ -15,3 +16,17 @@ def _reset_figma_cache():
     get_figma_cache.cache_clear()
     yield
     get_figma_cache.cache_clear()
+
+
+@pytest.fixture(autouse=True)
+def _pin_llm_provider_settings(monkeypatch):
+    """Settings() reads the developer's real .env — without this, LLM tests
+    would pass or fail depending on whatever LLM_PROVIDER/GEMINI_MODEL the
+    developer happens to have configured locally (e.g. after switching to
+    the Gemini free tier for their own dev use), rather than the code's own
+    defaults the tests are actually written against. test_llm_provider_dispatch.py
+    overrides these per-test anyway to exercise both branches.
+    """
+    settings = get_settings()
+    monkeypatch.setattr(settings, "llm_provider", "anthropic")
+    monkeypatch.setattr(settings, "gemini_model", "gemini-2.5-flash")
