@@ -1,5 +1,8 @@
 import { projectScreenshotUrl, scanDiffUrl, scanProductionUrl, type Project, type Scan } from '../lib/api'
+import { AgentActivityPanel } from './AgentActivityPanel'
+import { Badge, type BadgeTone } from './Badge'
 import { ReviewPanel } from './ReviewPanel'
+import { ZoomableImage } from './ZoomableImage'
 
 interface ScanDetailProps {
   project: Project
@@ -9,7 +12,10 @@ interface ScanDetailProps {
 export function ScanDetail({ project, scan }: ScanDetailProps) {
   if (!scan) {
     return (
-      <div className="flex h-64 items-center justify-center rounded-lg border border-dashed border-slate-300 text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
+      <div className="flex h-64 flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-slate-300 text-center text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
+        <span className="text-2xl" aria-hidden="true">
+          🔍
+        </span>
         Run a scan to compare the Figma design against the live app.
       </div>
     )
@@ -18,39 +24,44 @@ export function ScanDetail({ project, scan }: ScanDetailProps) {
   const result = scan.comparison_result
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-300">
         Raw pixel mismatch from deterministic image diffing — not a design
-        fidelity score or a categorized finding. Visual reasoning lands in a
-        later phase.
+        fidelity score or a categorized finding. Visual reasoning lands
+        below, via the AI review.
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <ImagePanel label="Figma (expected)" src={projectScreenshotUrl(project.id)} />
-        <ImagePanel label="Production (actual)" src={scanProductionUrl(project.id, scan.id)} />
-        <ImagePanel label="Diff" src={scanDiffUrl(project.id, scan.id)} />
-      </div>
+      <section>
+        <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
+          Visual comparison
+        </h3>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <ImagePanel label="Figma (expected)" src={projectScreenshotUrl(project.id)} />
+          <ImagePanel label="Production (actual)" src={scanProductionUrl(project.id, scan.id)} />
+          <ImagePanel label="Diff" src={scanDiffUrl(project.id, scan.id)} />
+        </div>
+      </section>
 
-      <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm sm:grid-cols-3">
-        <Detail label="Mismatch" value={`${result.mismatch_percentage.toFixed(2)}%`} />
-        <Detail
+      <dl className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+        <StatCard label="Mismatch" value={`${result.mismatch_percentage.toFixed(2)}%`} />
+        <StatCard
           label="Mismatched pixels"
           value={`${result.mismatched_pixels.toLocaleString()} / ${result.total_pixels.toLocaleString()}`}
         />
-        <Detail
+        <StatCard
           label="Dimensions match"
           value={result.dimensions_match ? 'Yes' : 'No — size differs'}
           emphasize={!result.dimensions_match}
         />
-        <Detail
+        <StatCard
           label="Figma size"
           value={`${result.expected_dimensions.width} × ${result.expected_dimensions.height}`}
         />
-        <Detail
+        <StatCard
           label="Production size"
           value={`${result.actual_dimensions.width} × ${result.actual_dimensions.height}`}
         />
-        <Detail
+        <StatCard
           label="Viewport"
           value={
             scan.breakpoint
@@ -63,6 +74,8 @@ export function ScanDetail({ project, scan }: ScanDetailProps) {
       <AccessibilitySection report={scan.accessibility_report} />
 
       <ReviewPanel key={scan.id} projectId={project.id} scanId={scan.id} />
+
+      <AgentActivityPanel />
     </div>
   )
 }
@@ -84,11 +97,7 @@ function AccessibilitySection({ report }: { report: Scan['accessibility_report']
               className="rounded-md border border-slate-200 p-3 text-sm dark:border-slate-800"
             >
               <div className="flex items-center gap-2">
-                <span
-                  className={`rounded-full px-2 py-0.5 text-xs font-medium ${impactClasses(violation.impact)}`}
-                >
-                  {violation.impact ?? 'unknown'}
-                </span>
+                <Badge tone={impactTone(violation.impact)}>{violation.impact ?? 'unknown'}</Badge>
                 <span className="font-medium text-slate-900 dark:text-slate-100">
                   {violation.help}
                 </span>
@@ -105,15 +114,15 @@ function AccessibilitySection({ report }: { report: Scan['accessibility_report']
   )
 }
 
-function impactClasses(impact: string | null): string {
+function impactTone(impact: string | null): BadgeTone {
   switch (impact) {
     case 'critical':
     case 'serious':
-      return 'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300'
+      return 'danger'
     case 'moderate':
-      return 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300'
+      return 'warning'
     default:
-      return 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200'
+      return 'neutral'
   }
 }
 
@@ -124,17 +133,26 @@ function ImagePanel({ label, src }: { label: string; src: string }) {
         {label}
       </p>
       <div className="overflow-hidden rounded-lg border border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-950">
-        <img src={src} alt={label} className="w-full object-contain" />
+        <ZoomableImage src={src} alt={label} />
       </div>
     </div>
   )
 }
 
-function Detail({ label, value, emphasize }: { label: string; value: string; emphasize?: boolean }) {
+function StatCard({ label, value, emphasize }: { label: string; value: string; emphasize?: boolean }) {
   return (
-    <div>
+    <div
+      className={`rounded-lg border p-3 ${
+        emphasize
+          ? 'border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950/40'
+          : 'border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-950'
+      }`}
+    >
       <dt className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">{label}</dt>
-      <dd className={emphasize ? 'font-medium text-red-600 dark:text-red-400' : 'text-slate-900 dark:text-slate-100'}>
+      <dd
+        className={`mt-0.5 truncate text-sm font-medium ${emphasize ? 'text-red-600 dark:text-red-400' : 'text-slate-900 dark:text-slate-100'}`}
+        title={value}
+      >
         {value}
       </dd>
     </div>

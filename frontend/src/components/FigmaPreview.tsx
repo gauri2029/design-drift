@@ -1,4 +1,5 @@
 import { projectScreenshotUrl, type Project } from '../lib/api'
+import { ZoomableImage } from './ZoomableImage'
 
 interface FigmaPreviewProps {
   project: Project | null
@@ -7,7 +8,10 @@ interface FigmaPreviewProps {
 export function FigmaPreview({ project }: FigmaPreviewProps) {
   if (!project) {
     return (
-      <div className="flex h-64 items-center justify-center rounded-lg border border-dashed border-slate-300 text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
+      <div className="flex h-64 flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-slate-300 text-center text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
+        <span className="text-2xl" aria-hidden="true">
+          🎨
+        </span>
         Select or register a project to see its Figma preview.
       </div>
     )
@@ -20,10 +24,9 @@ export function FigmaPreview({ project }: FigmaPreviewProps) {
     <div className="space-y-4">
       <div className="overflow-hidden rounded-lg border border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-950">
         {project.figma_screenshot_key ? (
-          <img
+          <ZoomableImage
             src={projectScreenshotUrl(project.id)}
             alt={`Figma render of ${node?.name ?? project.name}`}
-            className="w-full object-contain"
           />
         ) : (
           <div className="flex h-48 items-center justify-center text-sm text-slate-500 dark:text-slate-400">
@@ -51,7 +54,9 @@ function Detail({ label, value }: { label: string; value: string }) {
   return (
     <div>
       <dt className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">{label}</dt>
-      <dd className="text-slate-900 dark:text-slate-100">{value}</dd>
+      <dd className="truncate text-slate-900 dark:text-slate-100" title={value}>
+        {value}
+      </dd>
     </div>
   )
 }

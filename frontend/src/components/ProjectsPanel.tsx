@@ -14,7 +14,7 @@ export function ProjectsPanel() {
         <div className="space-y-6">
           <ProjectForm onCreate={createProject} submitting={submitting} />
 
-          <div>
+          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
             <h2 className="mb-2 text-sm font-semibold text-slate-900 dark:text-slate-100">
               Projects
             </h2>
@@ -36,7 +36,7 @@ export function ProjectsPanel() {
           </div>
         </div>
 
-        <div className="rounded-lg border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
+        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
           <h2 className="mb-4 text-sm font-semibold text-slate-900 dark:text-slate-100">
             Figma preview
           </h2>
