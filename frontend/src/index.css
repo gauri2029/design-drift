@@ -6,4 +6,39 @@
 
 body {
   margin: 0;
+  font-feature-settings: "cv11", "ss01";
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  background-color: #f8fafc;
+  background-image: radial-gradient(circle at 15% 0%, rgba(99, 102, 241, 0.06), transparent 45%);
+}
+
+@media (prefers-color-scheme: dark) {
+  body {
+    background-color: #020617;
+    background-image: radial-gradient(circle at 15% 0%, rgba(99, 102, 241, 0.12), transparent 45%);
+  }
+}
+
+::selection {
+  background-color: rgba(99, 102, 241, 0.35);
+}
+
+/* Slim, low-contrast scrollbar that matches the developer-tool aesthetic
+   instead of the OS default. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(100, 116, 139, 0.4) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-thumb {
+  background-color: rgba(100, 116, 139, 0.4);
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
 }

@@ -33,7 +33,7 @@ export function ScanRunner({ onRun, onRunAllBreakpoints, running }: ScanRunnerPr
         value={mode}
         onChange={(event) => setMode(event.target.value as ScanMode)}
         disabled={running}
-        className="rounded-md border border-slate-300 px-2 py-2 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+        className="rounded-md border border-slate-300 px-2 py-2 text-sm text-slate-900 shadow-sm transition focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
       >
         <option value={MATCH_FIGMA_BREAKPOINT}>Match Figma (recommended)</option>
         {STANDARD_BREAKPOINTS.map((name) => (
@@ -47,7 +47,7 @@ export function ScanRunner({ onRun, onRunAllBreakpoints, running }: ScanRunnerPr
         type="button"
         onClick={() => void run(() => onRun(mode))}
         disabled={running}
-        className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-300"
+        className="rounded-md bg-gradient-to-br from-indigo-600 to-violet-600 px-4 py-2 text-sm font-medium text-white shadow-sm shadow-indigo-600/20 transition hover:from-indigo-500 hover:to-violet-500 disabled:cursor-not-allowed disabled:opacity-50"
       >
         {running ? 'Running scan…' : 'Run scan'}
       </button>

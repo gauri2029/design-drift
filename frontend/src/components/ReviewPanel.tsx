@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { DesignFinding } from '../lib/api'
 import { useReviews } from '../hooks/useReviews'
+import { Badge, type BadgeTone } from './Badge'
 
 interface ReviewPanelProps {
   projectId: string
@@ -36,7 +37,7 @@ export function ReviewPanel({ projectId, scanId }: ReviewPanelProps) {
           type="button"
           onClick={() => void handleRun()}
           disabled={running}
-          className="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+          className="rounded-md border border-indigo-300 px-3 py-1.5 text-sm font-medium text-indigo-700 transition hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-indigo-800 dark:text-indigo-300 dark:hover:bg-indigo-950/40"
         >
           {running ? 'Reviewing…' : 'Run AI review'}
         </button>
@@ -97,14 +98,8 @@ function FindingItem({ finding }: { finding: DesignFinding }) {
   return (
     <li className="rounded-md border border-slate-200 p-3 text-sm dark:border-slate-800">
       <div className="flex flex-wrap items-center gap-2">
-        <span
-          className={`rounded-full px-2 py-0.5 text-xs font-medium ${severityClasses(finding.severity)}`}
-        >
-          {finding.severity}
-        </span>
-        <span className="rounded-full bg-slate-200 px-2 py-0.5 text-xs font-medium text-slate-700 dark:bg-slate-700 dark:text-slate-200">
-          {finding.category}
-        </span>
+        <Badge tone={severityTone(finding.severity)}>{finding.severity}</Badge>
+        <Badge tone="neutral">{finding.category}</Badge>
         <span className="font-medium text-slate-900 dark:text-slate-100">{finding.title}</span>
       </div>
       <p className="mt-1 text-slate-600 dark:text-slate-400">{finding.description}</p>
@@ -118,15 +113,15 @@ function FindingItem({ finding }: { finding: DesignFinding }) {
   )
 }
 
-function severityClasses(severity: DesignFinding['severity']): string {
+function severityTone(severity: DesignFinding['severity']): BadgeTone {
   switch (severity) {
     case 'critical':
-      return 'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300'
+      return 'danger'
     case 'major':
-      return 'bg-orange-100 text-orange-700 dark:bg-orange-950 dark:text-orange-300'
+      return 'orange'
     case 'minor':
-      return 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300'
+      return 'warning'
     default:
-      return 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200'
+      return 'neutral'
   }
 }
