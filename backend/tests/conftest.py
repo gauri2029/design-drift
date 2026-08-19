@@ -1,7 +1,31 @@
+import functools
+import http.server
+import threading
+from pathlib import Path
+
 import pytest
 
 from app.core.config import get_settings
 from app.integrations.figma.cache import get_figma_cache
+
+FIXTURES_DIR = Path(__file__).parent / "fixtures"
+
+
+@pytest.fixture(scope="module")
+def fixture_server():
+    """A local HTTP server over tests/fixtures/ — the "production app" for
+    tests that need Playwright to actually load a page (test_scans_api.py,
+    test_design_analysis_*.py). Real local server, not a file:// URL or an
+    external site — deterministic and keeps target_url http(s), which
+    ProjectCreate requires.
+    """
+    handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(FIXTURES_DIR))
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    yield server
+    server.shutdown()
+    thread.join()
 
 
 @pytest.fixture(autouse=True)

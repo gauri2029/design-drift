@@ -52,8 +52,8 @@ backend/app/
 ├── models/       SQLAlchemy ORM models          (added when we persist data)
 ├── schemas/      Pydantic request/response models (added as endpoints need them)
 ├── services/     Business logic, orchestration    (added when logic exists beyond routing)
-├── agents/       LangGraph runtime agents          (Design Analysis Agent + Supervisor built — Phase 3)
-├── graph/        LangGraph graph definition/state   (Design Analysis workflow built — Phase 3)
+├── agents/       LangGraph runtime agents          (Design Analysis + Production Analysis + Visual Comparison + Supervisor built — Phase 3)
+├── graph/        LangGraph graph definition/state   (Design Analysis + Production Analysis + Visual Comparison workflow built — Phase 3)
 ├── tools/        Agent tool implementations          (not yet built — Phase 3+)
 ├── integrations/ Figma, Playwright, axe-core clients  (not yet built — Phase 1+)
 └── evals/        AI evaluation harness                (not yet built — Phase 8)
@@ -65,19 +65,30 @@ straightforward query patterns, SQLAlchemy sessions used directly from
 `services/` are simpler to read and debug. We'll introduce a repository
 layer only if query logic starts duplicating across services.
 
-## Runtime multi-agent workflow (Design Analysis vertical slice built)
+## Runtime multi-agent workflow (Design Analysis + Production Analysis + Visual Comparison vertical slices built)
 
 Design Drift's own agents (distinct from the Claude Code agents used to
 *build* this repo — see `.claude/agents/`) are implemented as LangGraph
 nodes operating on one shared, structured state object — not by passing
 free-form natural-language messages between agents.
 
-Only the Supervisor + Design Analysis Agent are wired up so far
-(`app/graph/workflow.py`, `app/agents/`): `START -> supervisor ->
-(design_analysis -> supervisor)* -> END`, exposed via `POST
-/api/v1/projects/{project_id}/design-analysis`. The diagram below is the
-target shape once the remaining agents land — each new one extends the
-Supervisor's routing rather than inventing its own graph.
+The Supervisor, Design Analysis Agent, Production Analysis Agent, and
+Visual Comparison Agent are wired up so far (`app/graph/workflow.py`,
+`app/agents/`): `START -> supervisor -> (design_analysis -> supervisor)*
+-> (production_analysis -> supervisor)* -> (visual_comparison ->
+supervisor)* -> END`, all exposed together via one `POST
+/api/v1/projects/{project_id}/design-analysis` call. Two caveats against
+the target table below: Production Analysis today only covers the
+"screenshot" half of its planned tool set (no DOM/computed-style
+extraction yet), and this graph's Visual Comparison doesn't yet fold in
+accessibility context the way `app/services/reviews.py`'s older,
+Scan-scoped version does — the Accessibility Agent isn't wired into this
+graph yet, so there's nothing to fold in. Both `app/services/reviews.py`
+(Scan-scoped) and this graph's Visual Comparison node (Project-scoped)
+exist side by side for now, rather than one replacing the other. The
+diagram below is the target shape once the remaining agents land — each
+new one extends the Supervisor's routing rather than inventing its own
+graph.
 
 ```
 START
@@ -107,8 +118,8 @@ read/write:
 |---|---|---|
 | Supervisor | Owns workflow state, routes between agents | none (pure routing) |
 | Design Analysis | Interpret Figma structure/styles/intent | Figma REST API, multimodal LLM |
-| Production Analysis | Inspect the real app | Playwright (screenshots, DOM, computed styles) |
-| Visual Comparison | Expected vs. actual → structured drift findings | image diffing, multimodal LLM |
+| Production Analysis | Inspect the real app | Playwright (screenshots ✅, DOM/computed styles not yet built) |
+| Visual Comparison | Expected vs. actual → structured drift findings | image diffing ✅, multimodal LLM ✅ |
 | Accessibility | Deterministic a11y violations + AI interpretation | axe-core, LLM (interpretation only) |
 | Code Analysis | Map findings to likely source files | repo search/grep, LLM |
 | Fix Agent | Propose a code patch (never applies/publishes) | LLM structured output |

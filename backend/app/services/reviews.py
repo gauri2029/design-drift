@@ -67,7 +67,7 @@ async def create_review(
     review = Review(
         id=uuid4(),
         scan_id=scan.id,
-        model=settings.anthropic_model,
+        model=settings.llm_model,
         result=result.model_dump(mode="json"),
     )
     db.add(review)

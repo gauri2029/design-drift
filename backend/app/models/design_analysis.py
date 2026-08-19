@@ -9,17 +9,23 @@ from app.db.base import Base
 
 
 class DesignAnalysis(Base):
-    """One Design Analysis Agent run against a project's Figma data.
+    """One Design QA workflow run against a project (see app.graph.state's
+    DesignQAState and app.services.design_analysis).
 
-    Project-scoped, not scan-scoped — this agent interprets the Figma side
-    only (see app.agents.design_analysis), independent of any particular
-    production scan. A project can be re-analyzed (e.g. after a model
-    change or a Figma re-fetch), hence a separate table rather than a
-    single field on Project — same one-to-many shape as Project -> Scan.
+    Project-scoped, not scan-scoped — the workflow analyzes a project's
+    Figma side and captures its production app independent of any
+    particular pixel-diff Scan. A project can be re-analyzed (e.g. after a
+    model change, a Figma re-fetch, or a production deploy), hence a
+    separate table rather than a single field on Project — same
+    one-to-many shape as Project -> Scan.
 
     `result` mirrors app.agents.types.DesignAnalysisResult, stored as
     JSONB for the same reason as Review.result: a small fixed-shape record
-    with no query/filter need yet.
+    with no query/filter need yet. `production_screenshot_key`,
+    `comparison_result`, `diff_image_key`, and `visual_comparison` are
+    nullable because each was added after rows without it already existed
+    (one column set per agent's migration, as the graph grew) — new rows
+    always set all of them together, in one graph run.
     """
 
     __tablename__ = "design_analyses"
@@ -33,6 +39,16 @@ class DesignAnalysis(Base):
     # same rationale as Review.model.
     model: Mapped[str] = mapped_column(nullable=False)
     result: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False)
+    # Storage key for the Production Analysis Agent's captured screenshot
+    # (see app.integrations.storage) — same pattern as
+    # Scan.production_screenshot_key.
+    production_screenshot_key: Mapped[str | None] = mapped_column(nullable=True)
+    # Visual Comparison Agent's deterministic pixel-diff result/image and
+    # LLM judgment — same shapes as Scan.comparison_result/diff_image_key
+    # and Review.result respectively.
+    comparison_result: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
+    diff_image_key: Mapped[str | None] = mapped_column(nullable=True)
+    visual_comparison: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

@@ -42,6 +42,14 @@ class Settings(BaseSettings):
     def cors_origin_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
 
+    @property
+    def llm_model(self) -> str:
+        """Whichever model name generate_structured() actually calls right
+        now — for callers (app.services.reviews, app.services.design_analysis)
+        that record it as an audit/reproducibility trail alongside a result.
+        """
+        return self.gemini_model if self.llm_provider == "gemini" else self.anthropic_model
+
 
 @lru_cache
 def get_settings() -> Settings:

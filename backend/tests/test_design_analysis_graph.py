@@ -1,28 +1,35 @@
-"""Unit tests for the Design Analysis LangGraph workflow — the routing
-logic in isolation (no LLM call), plus one full run through the compiled
-graph with the Anthropic HTTP layer mocked (same approach as
-test_llm_client.py: mock the HTTP layer, not the SDK, so the graph's own
-wiring is actually exercised).
+"""Unit tests for the Design QA LangGraph workflow — the routing logic in
+isolation (no LLM/browser call), plus one full run through the compiled
+graph with the Anthropic HTTP layer and Playwright capture mocked (same
+approach as test_anthropic_client.py: mock the HTTP layer, not the SDK, so
+the graph's own wiring is actually exercised).
 """
 
 import json
+from io import BytesIO
 from uuid import uuid4
 
 import pytest
 import respx
 from httpx import Response
+from PIL import Image
 
 from app.agents.supervisor import (
     NODE_DESIGN_ANALYSIS,
     NODE_END,
+    NODE_PRODUCTION_ANALYSIS,
+    NODE_VISUAL_COMPARISON,
     route_after_supervisor,
     supervisor_node,
 )
 from app.agents.types import DesignAnalysisResult
 from app.core.config import get_settings
-from app.graph.state import DesignAnalysisState
-from app.graph.workflow import run_design_analysis
+from app.graph.state import DesignQAState
+from app.graph.workflow import run_design_qa
+from app.integrations.imaging.types import ComparisonResult, ImageDimensions
 from app.integrations.llm.exceptions import LLMNotConfiguredError
+from app.integrations.llm.types import VisualReviewResult
+from app.integrations.playwright.exceptions import PlaywrightCaptureError
 
 FIGMA_NODE = {
     "name": "Hero",
@@ -44,12 +51,44 @@ ANALYSIS_RESULT = {
     "implementation_risks": ["The heading's exact vertical spacing may be easy to get wrong."],
 }
 
+VISUAL_COMPARISON_RESULT = {
+    "material_drift_detected": True,
+    "summary": "The button is visibly narrower in production than in Figma.",
+    "findings": [
+        {
+            "category": "spacing",
+            "severity": "major",
+            "title": "Button is narrower than designed",
+            "description": "Figma shows a wider button; production renders narrower.",
+            "evidence": "The diff image highlights the button edge.",
+            "likely_area": "the primary call-to-action button",
+        }
+    ],
+}
+_SAMPLE_COMPARISON_RESULT = ComparisonResult(
+    expected_dimensions=ImageDimensions(width=1400, height=900),
+    actual_dimensions=ImageDimensions(width=1400, height=900),
+    dimensions_match=True,
+    compared_dimensions=ImageDimensions(width=1400, height=900),
+    mismatched_pixels=0,
+    total_pixels=1_260_000,
+    mismatch_percentage=0.0,
+)
 
-def _state(*, figma_node: dict | None = FIGMA_NODE) -> DesignAnalysisState:
-    return DesignAnalysisState(
+
+def _png_bytes(size: tuple[int, int] = (10, 10)) -> bytes:
+    image = Image.new("RGB", size, (255, 0, 0))
+    buffer = BytesIO()
+    image.save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+def _state(*, figma_node: dict | None = FIGMA_NODE, target_url: str = "https://example.com"):
+    return DesignQAState(
         project_id=uuid4(),
         figma_node=figma_node if figma_node is not None else {},
-        figma_screenshot=b"fake-png-bytes",
+        figma_screenshot=_png_bytes(),
+        target_url=target_url,
     )
 
 
@@ -77,7 +116,7 @@ def test_supervisor_sets_error_when_figma_node_missing() -> None:
     assert "no recorded data" in update["error"]
 
 
-def test_route_after_supervisor_goes_to_design_analysis_by_default() -> None:
+def test_route_after_supervisor_goes_to_design_analysis_first() -> None:
     assert route_after_supervisor(_state()) == NODE_DESIGN_ANALYSIS
 
 
@@ -88,51 +127,107 @@ def test_route_after_supervisor_ends_once_error_is_set() -> None:
     assert route_after_supervisor(state) == NODE_END
 
 
-def test_route_after_supervisor_ends_once_result_is_set() -> None:
+def test_route_after_supervisor_goes_to_production_analysis_after_design_analysis() -> None:
     state = _state()
-    state.result = DesignAnalysisResult.model_validate(ANALYSIS_RESULT)
+    state.design_analysis = DesignAnalysisResult.model_validate(ANALYSIS_RESULT)
+
+    assert route_after_supervisor(state) == NODE_PRODUCTION_ANALYSIS
+
+
+def test_route_after_supervisor_goes_to_visual_comparison_after_production_analysis() -> None:
+    state = _state()
+    state.design_analysis = DesignAnalysisResult.model_validate(ANALYSIS_RESULT)
+    state.production_screenshot = b"fake-production-png"
+
+    assert route_after_supervisor(state) == NODE_VISUAL_COMPARISON
+
+
+def test_route_after_supervisor_ends_once_visual_comparison_is_set() -> None:
+    state = _state()
+    state.design_analysis = DesignAnalysisResult.model_validate(ANALYSIS_RESULT)
+    state.production_screenshot = b"fake-production-png"
+    state.comparison_result = _SAMPLE_COMPARISON_RESULT
+    state.diff_screenshot = b"fake-diff-png"
+    state.visual_comparison = VisualReviewResult.model_validate(VISUAL_COMPARISON_RESULT)
 
     assert route_after_supervisor(state) == NODE_END
 
 
 @respx.mock
-async def test_run_design_analysis_returns_the_llm_result(monkeypatch) -> None:
+async def test_run_design_qa_returns_all_three_agents_output(monkeypatch, fixture_server) -> None:
     monkeypatch.setattr(get_settings(), "anthropic_api_key", "test-key")
+    # design_analysis and visual_comparison each make one LLM call, in that
+    # order — respond with each agent's own result shape in turn.
     route = respx.post("https://api.anthropic.com/v1/messages").mock(
-        return_value=Response(200, json=_anthropic_response(ANALYSIS_RESULT))
+        side_effect=[
+            Response(200, json=_anthropic_response(ANALYSIS_RESULT)),
+            Response(200, json=_anthropic_response(VISUAL_COMPARISON_RESULT)),
+        ]
     )
 
-    final_state = await run_design_analysis(_state())
+    host, port = fixture_server.server_address[:2]
+    final_state = await run_design_qa(
+        _state(target_url=f"http://{host}:{port}/capture_fixture.html")
+    )
 
     assert final_state.error is None
-    assert final_state.result == DesignAnalysisResult.model_validate(ANALYSIS_RESULT)
+    assert final_state.design_analysis == DesignAnalysisResult.model_validate(ANALYSIS_RESULT)
+    assert final_state.production_screenshot is not None
+    assert final_state.production_screenshot.startswith(b"\x89PNG")
+    # figma_screenshot is a small placeholder PNG, not sized to match the
+    # captured page, so dimensions_match isn't asserted here — just that
+    # image diffing actually ran and produced a real result/diff image.
+    assert final_state.comparison_result is not None
+    assert 0.0 <= final_state.comparison_result.mismatch_percentage <= 100.0
+    assert final_state.diff_screenshot is not None
+    assert final_state.diff_screenshot.startswith(b"\x89PNG")
+    assert final_state.visual_comparison == VisualReviewResult.model_validate(
+        VISUAL_COMPARISON_RESULT
+    )
 
-    # The image and Figma metadata actually reached the model.
-    request_body = json.loads(route.calls.last.request.content)
-    content_blocks = request_body["messages"][0]["content"]
-    assert content_blocks[0]["type"] == "image"
-    assert "Hero" in content_blocks[-1]["text"]
+    # The Design Analysis call carried the Figma image and metadata...
+    first_request = json.loads(route.calls[0].request.content)
+    first_blocks = first_request["messages"][0]["content"]
+    assert first_blocks[0]["type"] == "image"
+    assert "Hero" in first_blocks[-1]["text"]
+
+    # ...and the Visual Comparison call carried all three images (Figma,
+    # production, diff) plus the deterministic pixel-diff percentage.
+    second_request = json.loads(route.calls[1].request.content)
+    second_blocks = second_request["messages"][0]["content"]
+    assert sum(1 for block in second_blocks if block["type"] == "image") == 3
+    assert "pixel diff" in second_blocks[-1]["text"]
 
 
 @respx.mock
-async def test_run_design_analysis_stops_at_supervisor_without_calling_the_llm(
-    monkeypatch,
-) -> None:
+async def test_run_design_qa_stops_at_supervisor_without_calling_the_llm(monkeypatch) -> None:
     monkeypatch.setattr(get_settings(), "anthropic_api_key", "test-key")
     route = respx.post("https://api.anthropic.com/v1/messages").mock(
         return_value=Response(200, json=_anthropic_response(ANALYSIS_RESULT))
     )
 
-    final_state = await run_design_analysis(_state(figma_node={}))
+    final_state = await run_design_qa(_state(figma_node={}))
 
-    assert final_state.result is None
+    assert final_state.design_analysis is None
     assert final_state.error is not None
     assert route.call_count == 0
 
 
 @respx.mock
-async def test_run_design_analysis_propagates_llm_not_configured(monkeypatch) -> None:
+async def test_run_design_qa_propagates_llm_not_configured(monkeypatch) -> None:
     monkeypatch.setattr(get_settings(), "anthropic_api_key", "")
 
     with pytest.raises(LLMNotConfiguredError):
-        await run_design_analysis(_state())
+        await run_design_qa(_state())
+
+
+@respx.mock
+async def test_run_design_qa_propagates_capture_error_after_design_analysis(monkeypatch) -> None:
+    monkeypatch.setattr(get_settings(), "anthropic_api_key", "test-key")
+    respx.post("https://api.anthropic.com/v1/messages").mock(
+        return_value=Response(200, json=_anthropic_response(ANALYSIS_RESULT))
+    )
+
+    # No fixture server for this target_url — the page load itself fails.
+    with pytest.raises(PlaywrightCaptureError):
+        await run_design_qa(_state(target_url="http://127.0.0.1:1/unreachable"))
