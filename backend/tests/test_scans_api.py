@@ -7,11 +7,8 @@ external site (still fully local/deterministic), and not a file:// URL,
 since ProjectCreate.target_url requires http(s).
 """
 
-import functools
 import http.server
-import threading
 from io import BytesIO
-from pathlib import Path
 
 import pytest
 import respx
@@ -29,7 +26,6 @@ from app.models.scan import Scan
 FILE_KEY = "abc123"
 NODE_ID = "1:23"
 IMAGE_URL = "https://figma-alpha-api.s3.amazonaws.com/images/abcd/render.png"
-FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
 NODES_RESPONSE = {
     "name": "My File",
@@ -55,17 +51,6 @@ def _png_bytes(size: tuple[int, int], color: tuple[int, int, int]) -> bytes:
     buffer = BytesIO()
     image.save(buffer, format="PNG")
     return buffer.getvalue()
-
-
-@pytest.fixture(scope="module")
-def fixture_server():
-    handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(FIXTURES_DIR))
-    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    yield server
-    server.shutdown()
-    thread.join()
 
 
 @pytest.fixture(autouse=True)

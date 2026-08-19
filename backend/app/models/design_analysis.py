@@ -9,17 +9,21 @@ from app.db.base import Base
 
 
 class DesignAnalysis(Base):
-    """One Design Analysis Agent run against a project's Figma data.
+    """One Design QA workflow run against a project (see app.graph.state's
+    DesignQAState and app.services.design_analysis).
 
-    Project-scoped, not scan-scoped — this agent interprets the Figma side
-    only (see app.agents.design_analysis), independent of any particular
-    production scan. A project can be re-analyzed (e.g. after a model
-    change or a Figma re-fetch), hence a separate table rather than a
-    single field on Project — same one-to-many shape as Project -> Scan.
+    Project-scoped, not scan-scoped — the workflow analyzes a project's
+    Figma side and captures its production app independent of any
+    particular pixel-diff Scan. A project can be re-analyzed (e.g. after a
+    model change, a Figma re-fetch, or a production deploy), hence a
+    separate table rather than a single field on Project — same
+    one-to-many shape as Project -> Scan.
 
     `result` mirrors app.agents.types.DesignAnalysisResult, stored as
     JSONB for the same reason as Review.result: a small fixed-shape record
-    with no query/filter need yet.
+    with no query/filter need yet. `production_screenshot_key` is nullable
+    because it was added after design-analysis-only rows already existed
+    (see the Production Analysis Agent migration) — new rows always set it.
     """
 
     __tablename__ = "design_analyses"
@@ -33,6 +37,10 @@ class DesignAnalysis(Base):
     # same rationale as Review.model.
     model: Mapped[str] = mapped_column(nullable=False)
     result: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False)
+    # Storage key for the Production Analysis Agent's captured screenshot
+    # (see app.integrations.storage) — same pattern as
+    # Scan.production_screenshot_key.
+    production_screenshot_key: Mapped[str | None] = mapped_column(nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

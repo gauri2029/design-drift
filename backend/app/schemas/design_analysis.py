@@ -13,4 +13,5 @@ class DesignAnalysisRead(BaseModel):
     project_id: UUID
     model: str
     result: DesignAnalysisResult
+    production_screenshot_key: str | None
     created_at: datetime

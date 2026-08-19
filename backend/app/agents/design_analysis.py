@@ -16,7 +16,7 @@ decisions (see app.agents.supervisor), not agent failures.
 from typing import Any
 
 from app.agents.types import DesignAnalysisResult
-from app.graph.state import DesignAnalysisState
+from app.graph.state import DesignQAState
 from app.integrations.llm.client import generate_structured
 
 SYSTEM_PROMPT = """\
@@ -34,14 +34,14 @@ scrutinize most closely.
 Ground everything in what you can actually see in the image and the provided metadata."""
 
 
-async def design_analysis_node(state: DesignAnalysisState) -> dict[str, Any]:
+async def design_analysis_node(state: DesignQAState) -> dict[str, Any]:
     result = await generate_structured(
         system=SYSTEM_PROMPT,
         text=_build_context_text(state.figma_node),
         images=[state.figma_screenshot],
         output_format=DesignAnalysisResult,
     )
-    return {"result": result}
+    return {"design_analysis": result}
 
 
 def _build_context_text(node: dict[str, Any]) -> str:

@@ -1,8 +1,10 @@
 """API tests for /api/v1/projects/{project_id}/design-analysis.
 
-Same mocked-Figma + mocked-Anthropic setup as test_reviews_api.py — no
-scan involved here, since the Design Analysis Agent only ever looks at a
-project's stored Figma data (see app.services.design_analysis).
+Same mocked-Figma + mocked-Anthropic setup as test_reviews_api.py, plus a
+local fixture_server (see conftest.py) for the Production Analysis Agent's
+real Playwright capture — no scan involved here, since the persisted
+DesignAnalysis row is project-scoped, not scan-scoped (see
+app.services.design_analysis).
 """
 
 import json
@@ -87,14 +89,16 @@ async def _clean_up():
         await session.commit()
 
 
-async def _create_project(client: AsyncClient) -> str:
+async def _create_project(client: AsyncClient, fixture_server) -> str:
+    host, port = fixture_server.server_address[:2]
     response = await client.post(
         "/api/v1/projects",
         json={
             "name": "Marketing homepage",
             "figma_file_key": FILE_KEY,
             "figma_node_id": NODE_ID,
-            "target_url": "https://example.com",
+            "target_url": f"http://{host}:{port}/capture_fixture.html",
+            "target_selector": "#card",
         },
     )
     assert response.status_code == 201, response.text
@@ -102,7 +106,7 @@ async def _create_project(client: AsyncClient) -> str:
 
 
 @respx.mock
-async def test_design_analysis_lifecycle(monkeypatch, tmp_path) -> None:
+async def test_design_analysis_lifecycle(monkeypatch, tmp_path, fixture_server) -> None:
     monkeypatch.setattr(get_settings(), "figma_access_token", "test-figma-token")
     monkeypatch.setattr(get_settings(), "anthropic_api_key", "test-anthropic-key")
     app.dependency_overrides[get_storage_backend] = lambda: LocalStorageBackend(root=tmp_path)
@@ -122,7 +126,7 @@ async def test_design_analysis_lifecycle(monkeypatch, tmp_path) -> None:
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        project_id = await _create_project(client)
+        project_id = await _create_project(client, fixture_server)
 
         create_response = await client.post(f"/api/v1/projects/{project_id}/design-analysis")
         assert create_response.status_code == 201, create_response.text
@@ -132,10 +136,20 @@ async def test_design_analysis_lifecycle(monkeypatch, tmp_path) -> None:
         assert analysis["model"] == "claude-opus-5"
         assert analysis["result"]["design_intent"] == ANALYSIS_RESULT["design_intent"]
         assert analysis["result"]["key_components"][0]["name"] == "Primary CTA button"
+        assert analysis["production_screenshot_key"] is not None
 
         list_response = await client.get(f"/api/v1/projects/{project_id}/design-analysis")
         assert list_response.status_code == 200
         assert any(a["id"] == analysis["id"] for a in list_response.json())
+
+        production_response = await client.get(
+            f"/api/v1/projects/{project_id}/design-analysis/{analysis['id']}/production"
+        )
+        assert production_response.status_code == 200
+        assert production_response.headers["content-type"] == "image/png"
+        # The fixture's #card element is a solid 200x100 box (see
+        # capture_fixture.html / test_scans_api.py, which uses the same page).
+        assert Image.open(BytesIO(production_response.content)).size == (200, 100)
 
     # The rendered Figma image actually reached the model.
     request_body = json.loads(anthropic_route.calls.last.request.content)
@@ -145,7 +159,7 @@ async def test_design_analysis_lifecycle(monkeypatch, tmp_path) -> None:
 
 @respx.mock
 async def test_design_analysis_returns_502_when_anthropic_key_not_configured(
-    monkeypatch, tmp_path
+    monkeypatch, tmp_path, fixture_server
 ) -> None:
     monkeypatch.setattr(get_settings(), "figma_access_token", "test-figma-token")
     monkeypatch.setattr(get_settings(), "anthropic_api_key", "")
@@ -163,11 +177,53 @@ async def test_design_analysis_returns_502_when_anthropic_key_not_configured(
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        project_id = await _create_project(client)
+        project_id = await _create_project(client, fixture_server)
         response = await client.post(f"/api/v1/projects/{project_id}/design-analysis")
 
     assert response.status_code == 502
     assert "ANTHROPIC_API_KEY" in response.json()["detail"]
+
+
+@respx.mock
+async def test_design_analysis_returns_502_when_target_selector_not_found(
+    monkeypatch, tmp_path, fixture_server
+) -> None:
+    monkeypatch.setattr(get_settings(), "figma_access_token", "test-figma-token")
+    monkeypatch.setattr(get_settings(), "anthropic_api_key", "test-anthropic-key")
+    app.dependency_overrides[get_storage_backend] = lambda: LocalStorageBackend(root=tmp_path)
+
+    respx.get(f"https://api.figma.com/v1/files/{FILE_KEY}/nodes").mock(
+        return_value=Response(200, json=NODES_RESPONSE)
+    )
+    respx.get(f"https://api.figma.com/v1/images/{FILE_KEY}").mock(
+        return_value=Response(200, json=IMAGES_RESPONSE)
+    )
+    respx.get(IMAGE_URL).mock(
+        return_value=Response(200, content=_png_bytes((1400, 900), (255, 255, 255)))
+    )
+    respx.post("https://api.anthropic.com/v1/messages").mock(
+        return_value=Response(200, json=_anthropic_response(ANALYSIS_RESULT))
+    )
+
+    host, port = fixture_server.server_address[:2]
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        project_response = await client.post(
+            "/api/v1/projects",
+            json={
+                "name": "Marketing homepage",
+                "figma_file_key": FILE_KEY,
+                "figma_node_id": NODE_ID,
+                "target_url": f"http://{host}:{port}/capture_fixture.html",
+                "target_selector": "#does-not-exist",
+            },
+        )
+        assert project_response.status_code == 201, project_response.text
+        project_id = project_response.json()["id"]
+
+        response = await client.post(f"/api/v1/projects/{project_id}/design-analysis")
+
+    assert response.status_code == 502
 
 
 async def test_design_analysis_returns_404_when_project_missing() -> None:

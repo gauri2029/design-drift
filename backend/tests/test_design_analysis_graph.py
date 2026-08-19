@@ -1,8 +1,8 @@
-"""Unit tests for the Design Analysis LangGraph workflow — the routing
-logic in isolation (no LLM call), plus one full run through the compiled
-graph with the Anthropic HTTP layer mocked (same approach as
-test_llm_client.py: mock the HTTP layer, not the SDK, so the graph's own
-wiring is actually exercised).
+"""Unit tests for the Design QA LangGraph workflow — the routing logic in
+isolation (no LLM/browser call), plus one full run through the compiled
+graph with the Anthropic HTTP layer and Playwright capture mocked (same
+approach as test_anthropic_client.py: mock the HTTP layer, not the SDK, so
+the graph's own wiring is actually exercised).
 """
 
 import json
@@ -15,14 +15,16 @@ from httpx import Response
 from app.agents.supervisor import (
     NODE_DESIGN_ANALYSIS,
     NODE_END,
+    NODE_PRODUCTION_ANALYSIS,
     route_after_supervisor,
     supervisor_node,
 )
 from app.agents.types import DesignAnalysisResult
 from app.core.config import get_settings
-from app.graph.state import DesignAnalysisState
-from app.graph.workflow import run_design_analysis
+from app.graph.state import DesignQAState
+from app.graph.workflow import run_design_qa
 from app.integrations.llm.exceptions import LLMNotConfiguredError
+from app.integrations.playwright.exceptions import PlaywrightCaptureError
 
 FIGMA_NODE = {
     "name": "Hero",
@@ -45,11 +47,12 @@ ANALYSIS_RESULT = {
 }
 
 
-def _state(*, figma_node: dict | None = FIGMA_NODE) -> DesignAnalysisState:
-    return DesignAnalysisState(
+def _state(*, figma_node: dict | None = FIGMA_NODE, target_url: str = "https://example.com"):
+    return DesignQAState(
         project_id=uuid4(),
         figma_node=figma_node if figma_node is not None else {},
         figma_screenshot=b"fake-png-bytes",
+        target_url=target_url,
     )
 
 
@@ -77,7 +80,7 @@ def test_supervisor_sets_error_when_figma_node_missing() -> None:
     assert "no recorded data" in update["error"]
 
 
-def test_route_after_supervisor_goes_to_design_analysis_by_default() -> None:
+def test_route_after_supervisor_goes_to_design_analysis_first() -> None:
     assert route_after_supervisor(_state()) == NODE_DESIGN_ANALYSIS
 
 
@@ -88,24 +91,37 @@ def test_route_after_supervisor_ends_once_error_is_set() -> None:
     assert route_after_supervisor(state) == NODE_END
 
 
-def test_route_after_supervisor_ends_once_result_is_set() -> None:
+def test_route_after_supervisor_goes_to_production_analysis_after_design_analysis() -> None:
     state = _state()
-    state.result = DesignAnalysisResult.model_validate(ANALYSIS_RESULT)
+    state.design_analysis = DesignAnalysisResult.model_validate(ANALYSIS_RESULT)
+
+    assert route_after_supervisor(state) == NODE_PRODUCTION_ANALYSIS
+
+
+def test_route_after_supervisor_ends_once_production_screenshot_is_set() -> None:
+    state = _state()
+    state.design_analysis = DesignAnalysisResult.model_validate(ANALYSIS_RESULT)
+    state.production_screenshot = b"fake-production-png"
 
     assert route_after_supervisor(state) == NODE_END
 
 
 @respx.mock
-async def test_run_design_analysis_returns_the_llm_result(monkeypatch) -> None:
+async def test_run_design_qa_returns_both_agents_output(monkeypatch, fixture_server) -> None:
     monkeypatch.setattr(get_settings(), "anthropic_api_key", "test-key")
     route = respx.post("https://api.anthropic.com/v1/messages").mock(
         return_value=Response(200, json=_anthropic_response(ANALYSIS_RESULT))
     )
 
-    final_state = await run_design_analysis(_state())
+    host, port = fixture_server.server_address[:2]
+    final_state = await run_design_qa(
+        _state(target_url=f"http://{host}:{port}/capture_fixture.html")
+    )
 
     assert final_state.error is None
-    assert final_state.result == DesignAnalysisResult.model_validate(ANALYSIS_RESULT)
+    assert final_state.design_analysis == DesignAnalysisResult.model_validate(ANALYSIS_RESULT)
+    assert final_state.production_screenshot is not None
+    assert final_state.production_screenshot.startswith(b"\x89PNG")
 
     # The image and Figma metadata actually reached the model.
     request_body = json.loads(route.calls.last.request.content)
@@ -115,24 +131,34 @@ async def test_run_design_analysis_returns_the_llm_result(monkeypatch) -> None:
 
 
 @respx.mock
-async def test_run_design_analysis_stops_at_supervisor_without_calling_the_llm(
-    monkeypatch,
-) -> None:
+async def test_run_design_qa_stops_at_supervisor_without_calling_the_llm(monkeypatch) -> None:
     monkeypatch.setattr(get_settings(), "anthropic_api_key", "test-key")
     route = respx.post("https://api.anthropic.com/v1/messages").mock(
         return_value=Response(200, json=_anthropic_response(ANALYSIS_RESULT))
     )
 
-    final_state = await run_design_analysis(_state(figma_node={}))
+    final_state = await run_design_qa(_state(figma_node={}))
 
-    assert final_state.result is None
+    assert final_state.design_analysis is None
     assert final_state.error is not None
     assert route.call_count == 0
 
 
 @respx.mock
-async def test_run_design_analysis_propagates_llm_not_configured(monkeypatch) -> None:
+async def test_run_design_qa_propagates_llm_not_configured(monkeypatch) -> None:
     monkeypatch.setattr(get_settings(), "anthropic_api_key", "")
 
     with pytest.raises(LLMNotConfiguredError):
-        await run_design_analysis(_state())
+        await run_design_qa(_state())
+
+
+@respx.mock
+async def test_run_design_qa_propagates_capture_error_after_design_analysis(monkeypatch) -> None:
+    monkeypatch.setattr(get_settings(), "anthropic_api_key", "test-key")
+    respx.post("https://api.anthropic.com/v1/messages").mock(
+        return_value=Response(200, json=_anthropic_response(ANALYSIS_RESULT))
+    )
+
+    # No fixture server for this target_url — the page load itself fails.
+    with pytest.raises(PlaywrightCaptureError):
+        await run_design_qa(_state(target_url="http://127.0.0.1:1/unreachable"))

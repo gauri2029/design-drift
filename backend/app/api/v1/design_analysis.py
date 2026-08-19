@@ -1,10 +1,11 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
 from app.integrations.llm.exceptions import LLMNotConfiguredError, LLMResponseError
+from app.integrations.playwright.exceptions import PlaywrightCaptureError
 from app.integrations.storage.base import StorageBackend
 from app.integrations.storage.local import get_storage_backend
 from app.models.project import Project
@@ -38,6 +39,8 @@ async def create_design_analysis(
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
     except LLMResponseError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    except PlaywrightCaptureError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
     return DesignAnalysisRead.model_validate(analysis)
 
 
@@ -48,3 +51,21 @@ async def list_design_analyses(
     await _get_project_or_404(project_id, db)
     analyses = await design_analysis_service.list_design_analyses(db, project_id)
     return [DesignAnalysisRead.model_validate(analysis) for analysis in analyses]
+
+
+@router.get("/{design_analysis_id}/production")
+async def get_design_analysis_production_screenshot(
+    project_id: UUID,
+    design_analysis_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    storage: StorageBackend = Depends(get_storage_backend),
+) -> Response:
+    await _get_project_or_404(project_id, db)
+    analysis = await design_analysis_service.get_design_analysis(db, project_id, design_analysis_id)
+    if analysis is None or analysis.production_screenshot_key is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="design analysis not found"
+        )
+    return Response(
+        content=storage.read(analysis.production_screenshot_key), media_type="image/png"
+    )
