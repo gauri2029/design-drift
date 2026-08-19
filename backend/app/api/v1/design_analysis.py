@@ -69,3 +69,19 @@ async def get_design_analysis_production_screenshot(
     return Response(
         content=storage.read(analysis.production_screenshot_key), media_type="image/png"
     )
+
+
+@router.get("/{design_analysis_id}/diff")
+async def get_design_analysis_diff_image(
+    project_id: UUID,
+    design_analysis_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    storage: StorageBackend = Depends(get_storage_backend),
+) -> Response:
+    await _get_project_or_404(project_id, db)
+    analysis = await design_analysis_service.get_design_analysis(db, project_id, design_analysis_id)
+    if analysis is None or analysis.diff_image_key is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="design analysis not found"
+        )
+    return Response(content=storage.read(analysis.diff_image_key), media_type="image/png")

@@ -4,8 +4,8 @@ model that every node reads/writes explicit fields on — no free-form
 message-passing between agents (docs/principles.md #4).
 
 Grows one agent's worth of fields at a time as each vertical slice lands
-(docs/principles.md #1): Design Analysis first, now Production Analysis.
-Visual Comparison, Accessibility, etc. add their own fields the same way
+(docs/principles.md #1): Design Analysis, then Production Analysis, now
+Visual Comparison. Accessibility, etc. add their own fields the same way
 rather than this being speculatively modeled up front.
 """
 
@@ -15,6 +15,8 @@ from uuid import UUID
 from pydantic import BaseModel
 
 from app.agents.types import DesignAnalysisResult
+from app.integrations.imaging.types import ComparisonResult
+from app.integrations.llm.types import VisualReviewResult
 
 
 class DesignQAState(BaseModel):
@@ -36,6 +38,14 @@ class DesignQAState(BaseModel):
     target_url: str
     target_selector: str | None = None
     production_screenshot: bytes | None = None
+
+    # --- Visual Comparison Agent's output ---
+    # comparison_result/diff_screenshot are its deterministic tool call
+    # (image diffing); visual_comparison is its LLM judgment call on top of
+    # that — see app.agents.visual_comparison.
+    comparison_result: ComparisonResult | None = None
+    diff_screenshot: bytes | None = None
+    visual_comparison: VisualReviewResult | None = None
 
     # Set by the Supervisor when it decides the workflow can't proceed
     # (e.g. no usable Figma data) — distinct from a node's own tool/LLM

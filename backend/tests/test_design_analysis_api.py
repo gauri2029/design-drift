@@ -58,6 +58,21 @@ ANALYSIS_RESULT = {
     "implementation_risks": ["The heading's exact vertical spacing may be easy to get wrong."],
 }
 
+VISUAL_COMPARISON_RESULT = {
+    "material_drift_detected": True,
+    "summary": "The button is visibly narrower in production than in Figma.",
+    "findings": [
+        {
+            "category": "spacing",
+            "severity": "major",
+            "title": "Button is narrower than designed",
+            "description": "Figma shows a wider button; production renders narrower.",
+            "evidence": "The diff image highlights the button edge.",
+            "likely_area": "the primary call-to-action button",
+        }
+    ],
+}
+
 
 def _png_bytes(size: tuple[int, int], color: tuple[int, int, int]) -> bytes:
     image = Image.new("RGB", size, color)
@@ -121,7 +136,10 @@ async def test_design_analysis_lifecycle(monkeypatch, tmp_path, fixture_server) 
         return_value=Response(200, content=_png_bytes((1400, 900), (255, 255, 255)))
     )
     anthropic_route = respx.post("https://api.anthropic.com/v1/messages").mock(
-        return_value=Response(200, json=_anthropic_response(ANALYSIS_RESULT))
+        side_effect=[
+            Response(200, json=_anthropic_response(ANALYSIS_RESULT)),
+            Response(200, json=_anthropic_response(VISUAL_COMPARISON_RESULT)),
+        ]
     )
 
     transport = ASGITransport(app=app)
@@ -137,6 +155,9 @@ async def test_design_analysis_lifecycle(monkeypatch, tmp_path, fixture_server) 
         assert analysis["result"]["design_intent"] == ANALYSIS_RESULT["design_intent"]
         assert analysis["result"]["key_components"][0]["name"] == "Primary CTA button"
         assert analysis["production_screenshot_key"] is not None
+        assert analysis["visual_comparison"]["summary"] == VISUAL_COMPARISON_RESULT["summary"]
+        assert analysis["comparison_result"]["mismatch_percentage"] is not None
+        assert analysis["diff_image_key"] is not None
 
         list_response = await client.get(f"/api/v1/projects/{project_id}/design-analysis")
         assert list_response.status_code == 200
@@ -151,10 +172,21 @@ async def test_design_analysis_lifecycle(monkeypatch, tmp_path, fixture_server) 
         # capture_fixture.html / test_scans_api.py, which uses the same page).
         assert Image.open(BytesIO(production_response.content)).size == (200, 100)
 
-    # The rendered Figma image actually reached the model.
-    request_body = json.loads(anthropic_route.calls.last.request.content)
-    content_blocks = request_body["messages"][0]["content"]
-    assert sum(1 for block in content_blocks if block["type"] == "image") == 1
+        diff_response = await client.get(
+            f"/api/v1/projects/{project_id}/design-analysis/{analysis['id']}/diff"
+        )
+        assert diff_response.status_code == 200
+        assert diff_response.headers["content-type"] == "image/png"
+
+    # The Design Analysis call carried exactly the Figma image; the Visual
+    # Comparison call carried all three (Figma, production, diff).
+    first_request = json.loads(anthropic_route.calls[0].request.content)
+    first_blocks = first_request["messages"][0]["content"]
+    assert sum(1 for block in first_blocks if block["type"] == "image") == 1
+
+    second_request = json.loads(anthropic_route.calls[1].request.content)
+    second_blocks = second_request["messages"][0]["content"]
+    assert sum(1 for block in second_blocks if block["type"] == "image") == 3
 
 
 @respx.mock

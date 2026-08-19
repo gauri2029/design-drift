@@ -21,9 +21,11 @@ class DesignAnalysis(Base):
 
     `result` mirrors app.agents.types.DesignAnalysisResult, stored as
     JSONB for the same reason as Review.result: a small fixed-shape record
-    with no query/filter need yet. `production_screenshot_key` is nullable
-    because it was added after design-analysis-only rows already existed
-    (see the Production Analysis Agent migration) — new rows always set it.
+    with no query/filter need yet. `production_screenshot_key`,
+    `comparison_result`, `diff_image_key`, and `visual_comparison` are
+    nullable because each was added after rows without it already existed
+    (one column set per agent's migration, as the graph grew) — new rows
+    always set all of them together, in one graph run.
     """
 
     __tablename__ = "design_analyses"
@@ -41,6 +43,12 @@ class DesignAnalysis(Base):
     # (see app.integrations.storage) — same pattern as
     # Scan.production_screenshot_key.
     production_screenshot_key: Mapped[str | None] = mapped_column(nullable=True)
+    # Visual Comparison Agent's deterministic pixel-diff result/image and
+    # LLM judgment — same shapes as Scan.comparison_result/diff_image_key
+    # and Review.result respectively.
+    comparison_result: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
+    diff_image_key: Mapped[str | None] = mapped_column(nullable=True)
+    visual_comparison: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

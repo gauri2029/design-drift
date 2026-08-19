@@ -6,11 +6,11 @@ Unlike app.services.projects/scans (plain service functions calling
 integrations directly, per those modules' docstrings), this is the first
 place an actual LangGraph graph runs — see app.graph.workflow for the
 graph itself and docs/architecture.md for where this fits in the target
-multi-agent workflow. The graph currently runs Design Analysis then
-Production Analysis (see app.graph.state.DesignQAState); this function's
-name/table stay "design_analysis" rather than being renamed each time the
-graph gains an agent, same as Scan's name didn't change when breakpoints
-were added to it.
+multi-agent workflow. The graph currently runs Design Analysis, then
+Production Analysis, then Visual Comparison (see app.graph.state.
+DesignQAState); this function's name/table stay "design_analysis" rather
+than being renamed each time the graph gains an agent, same as Scan's
+name didn't change when breakpoints were added to it.
 
 Like app.services.reviews, this is never triggered automatically — it
 costs real money and launches a real browser per call, so it's an
@@ -53,14 +53,19 @@ async def create_design_analysis(
 
     if final_state.error is not None:
         raise ProjectNotAnalyzableError(final_state.error)
-    # Both guaranteed by route_after_supervisor: it only routes to END once
-    # neither is None (or on error, handled above).
+    # All guaranteed by route_after_supervisor: it only routes to END once
+    # none of these are None (or on error, handled above).
     assert final_state.design_analysis is not None
     assert final_state.production_screenshot is not None
+    assert final_state.comparison_result is not None
+    assert final_state.diff_screenshot is not None
+    assert final_state.visual_comparison is not None
 
     analysis_id = uuid4()
     production_screenshot_key = f"design-analyses/{analysis_id}/production.png"
+    diff_image_key = f"design-analyses/{analysis_id}/diff.png"
     storage.save(production_screenshot_key, final_state.production_screenshot)
+    storage.save(diff_image_key, final_state.diff_screenshot)
 
     settings = get_settings()
     design_analysis = DesignAnalysis(
@@ -69,6 +74,9 @@ async def create_design_analysis(
         model=settings.llm_model,
         result=final_state.design_analysis.model_dump(mode="json"),
         production_screenshot_key=production_screenshot_key,
+        comparison_result=final_state.comparison_result.model_dump(mode="json"),
+        diff_image_key=diff_image_key,
+        visual_comparison=final_state.visual_comparison.model_dump(mode="json"),
     )
     db.add(design_analysis)
     await db.commit()

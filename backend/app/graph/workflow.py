@@ -1,14 +1,15 @@
 """Builds and compiles the Design QA LangGraph workflow (see
-docs/architecture.md's "Runtime multi-agent workflow"). Two vertical
+docs/architecture.md's "Runtime multi-agent workflow"). Three vertical
 slices exist so far:
 
     START -> supervisor -> (design_analysis -> supervisor)*
-                         -> (production_analysis -> supervisor)* -> END
+                         -> (production_analysis -> supervisor)*
+                         -> (visual_comparison -> supervisor)* -> END
 
 The supervisor is revisited after each agent so it observes the updated
 state before routing to the next one (or to END), rather than any agent
-node ending the graph itself — the same loop-back shape later agents
-(visual comparison, accessibility, ...) will chain through.
+node ending the graph itself — the same loop-back shape a later agent
+(accessibility, ...) will chain through.
 """
 
 from langgraph.graph import END, START, StateGraph
@@ -20,19 +21,22 @@ from app.agents.supervisor import (
     NODE_DESIGN_ANALYSIS,
     NODE_END,
     NODE_PRODUCTION_ANALYSIS,
+    NODE_VISUAL_COMPARISON,
     route_after_supervisor,
     supervisor_node,
 )
+from app.agents.visual_comparison import visual_comparison_node
 from app.graph.state import DesignQAState
 
 
-def build_design_qa_graph() -> CompiledStateGraph[
-    DesignQAState, None, DesignQAState, DesignQAState
-]:
+def build_design_qa_graph() -> (
+    CompiledStateGraph[DesignQAState, None, DesignQAState, DesignQAState]
+):
     graph = StateGraph(DesignQAState)
     graph.add_node("supervisor", supervisor_node)
     graph.add_node(NODE_DESIGN_ANALYSIS, design_analysis_node)
     graph.add_node(NODE_PRODUCTION_ANALYSIS, production_analysis_node)
+    graph.add_node(NODE_VISUAL_COMPARISON, visual_comparison_node)
 
     graph.add_edge(START, "supervisor")
     graph.add_conditional_edges(
@@ -41,11 +45,13 @@ def build_design_qa_graph() -> CompiledStateGraph[
         {
             NODE_DESIGN_ANALYSIS: NODE_DESIGN_ANALYSIS,
             NODE_PRODUCTION_ANALYSIS: NODE_PRODUCTION_ANALYSIS,
+            NODE_VISUAL_COMPARISON: NODE_VISUAL_COMPARISON,
             NODE_END: END,
         },
     )
     graph.add_edge(NODE_DESIGN_ANALYSIS, "supervisor")
     graph.add_edge(NODE_PRODUCTION_ANALYSIS, "supervisor")
+    graph.add_edge(NODE_VISUAL_COMPARISON, "supervisor")
 
     return graph.compile()
 
