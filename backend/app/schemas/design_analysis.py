@@ -3,7 +3,11 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
 
-from app.agents.types import AccessibilityInterpretation, DesignAnalysisResult
+from app.agents.types import (
+    AccessibilityInterpretation,
+    AggregatedFindings,
+    DesignAnalysisResult,
+)
 from app.integrations.axe.types import AccessibilityReport
 from app.integrations.imaging.types import ComparisonResult
 from app.integrations.llm.types import VisualReviewResult
@@ -22,4 +26,5 @@ class DesignAnalysisRead(BaseModel):
     visual_comparison: VisualReviewResult | None
     accessibility_report: AccessibilityReport | None
     accessibility_interpretation: AccessibilityInterpretation | None
+    aggregated_findings: AggregatedFindings | None
     created_at: datetime
