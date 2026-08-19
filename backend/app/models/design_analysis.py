@@ -22,7 +22,8 @@ class DesignAnalysis(Base):
     `result` mirrors app.agents.types.DesignAnalysisResult, stored as
     JSONB for the same reason as Review.result: a small fixed-shape record
     with no query/filter need yet. `production_screenshot_key`,
-    `comparison_result`, `diff_image_key`, and `visual_comparison` are
+    `comparison_result`, `diff_image_key`, `visual_comparison`,
+    `accessibility_report`, and `accessibility_interpretation` are all
     nullable because each was added after rows without it already existed
     (one column set per agent's migration, as the graph grew) — new rows
     always set all of them together, in one graph run.
@@ -49,6 +50,13 @@ class DesignAnalysis(Base):
     comparison_result: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
     diff_image_key: Mapped[str | None] = mapped_column(nullable=True)
     visual_comparison: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
+    # Accessibility Agent's deterministic axe-core report and LLM triage —
+    # no separate image key, unlike the other agents: nothing new gets
+    # stored to the storage backend here.
+    accessibility_report: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
+    accessibility_interpretation: Mapped[dict[str, object] | None] = mapped_column(
+        JSONB, nullable=True
+    )
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

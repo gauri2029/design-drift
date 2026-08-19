@@ -1,13 +1,18 @@
-"""Structured-output contract for the Design Analysis Agent (see
-docs/architecture.md's runtime-agent table).
+"""Structured-output contracts for Design Drift's own LangGraph agents
+(see docs/architecture.md's runtime-agent table) — one per agent, grown
+here as each vertical slice lands, same as app.graph.state.
 
 Distinct from app.integrations.llm.types.VisualReviewResult: that's the
-Visual Comparison Agent's job (Figma vs. production, judging drift). This
-agent only ever sees the Figma side — it interprets structure and intent
-before any production capture exists, so a later Visual Comparison pass
-knows what to compare against, and a later Code Analysis / Fix Agent pass
-knows what's risky to get wrong.
+Visual Comparison Agent's job (Figma vs. production, judging drift), kept
+in the integrations package since app.services.reviews (its pre-graph,
+Scan-scoped predecessor) already depended on it before this package
+existed. Design Analysis only ever sees the Figma side — it interprets
+structure and intent before any production capture exists, so a later
+Visual Comparison pass knows what to compare against, and a later Code
+Analysis / Fix Agent pass knows what's risky to get wrong.
 """
+
+from enum import StrEnum
 
 from pydantic import BaseModel, Field
 
@@ -49,5 +54,43 @@ class DesignAnalysisResult(BaseModel):
             "code — precise spacing, a non-obvious layout technique, responsive behavior that "
             "isn't visible in a single static render, and so on. Flagged so a later comparison "
             "pass knows what to scrutinize most closely."
+        ),
+    )
+
+
+class AccessibilityPriority(StrEnum):
+    HIGH = "high"
+    MEDIUM = "medium"
+    LOW = "low"
+
+
+class AccessibilityIssue(BaseModel):
+    violation_id: str = Field(
+        description="The axe-core violation `id` (see AxeViolation) this issue refers to."
+    )
+    user_impact: str = Field(
+        description=(
+            "Plain-language explanation of how this actually affects real users trying to use "
+            "the page — not a restatement of the rule name."
+        )
+    )
+    priority: AccessibilityPriority = Field(
+        description=(
+            "Your own triage call for how urgently this deserves attention. May differ from "
+            "axe-core's own `impact` rating: axe rates a rule in the abstract, this should "
+            "account for where on the page it appears and how it's likely to be encountered."
+        )
+    )
+
+
+class AccessibilityInterpretation(BaseModel):
+    summary: str = Field(
+        description="One-paragraph, plain-language summary of the page's accessibility posture."
+    )
+    most_important_issues: list[AccessibilityIssue] = Field(
+        default_factory=list,
+        description=(
+            "Which violations most deserve attention first, ordered most urgent first — not "
+            "necessarily every violation, just the ones worth specifically calling out."
         ),
     )

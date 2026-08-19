@@ -73,6 +73,17 @@ VISUAL_COMPARISON_RESULT = {
     ],
 }
 
+ACCESSIBILITY_INTERPRETATION = {
+    "summary": "One serious color-contrast violation affecting the primary CTA button.",
+    "most_important_issues": [
+        {
+            "violation_id": "color-contrast",
+            "user_impact": "Low-vision users may not be able to read the button's label.",
+            "priority": "high",
+        }
+    ],
+}
+
 
 def _png_bytes(size: tuple[int, int], color: tuple[int, int, int]) -> bytes:
     image = Image.new("RGB", size, color)
@@ -135,10 +146,14 @@ async def test_design_analysis_lifecycle(monkeypatch, tmp_path, fixture_server) 
     respx.get(IMAGE_URL).mock(
         return_value=Response(200, content=_png_bytes((1400, 900), (255, 255, 255)))
     )
+    # A 3rd entry is only consumed if accessibility finds violations scoped
+    # to #card and makes its own LLM call — harmless if it doesn't (see
+    # app.agents.accessibility's zero-violations short-circuit).
     anthropic_route = respx.post("https://api.anthropic.com/v1/messages").mock(
         side_effect=[
             Response(200, json=_anthropic_response(ANALYSIS_RESULT)),
             Response(200, json=_anthropic_response(VISUAL_COMPARISON_RESULT)),
+            Response(200, json=_anthropic_response(ACCESSIBILITY_INTERPRETATION)),
         ]
     )
 
@@ -158,6 +173,8 @@ async def test_design_analysis_lifecycle(monkeypatch, tmp_path, fixture_server) 
         assert analysis["visual_comparison"]["summary"] == VISUAL_COMPARISON_RESULT["summary"]
         assert analysis["comparison_result"]["mismatch_percentage"] is not None
         assert analysis["diff_image_key"] is not None
+        assert analysis["accessibility_report"] is not None
+        assert analysis["accessibility_interpretation"] is not None
 
         list_response = await client.get(f"/api/v1/projects/{project_id}/design-analysis")
         assert list_response.status_code == 200
