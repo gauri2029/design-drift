@@ -16,6 +16,7 @@ from PIL import Image
 
 from app.agents.supervisor import (
     NODE_ACCESSIBILITY,
+    NODE_AGGREGATE_FINDINGS,
     NODE_DESIGN_ANALYSIS,
     NODE_END,
     NODE_PRODUCTION_ANALYSIS,
@@ -23,7 +24,12 @@ from app.agents.supervisor import (
     route_after_supervisor,
     supervisor_node,
 )
-from app.agents.types import AccessibilityInterpretation, DesignAnalysisResult
+from app.agents.types import (
+    AccessibilityInterpretation,
+    AggregatedFindings,
+    DesignAnalysisResult,
+    FindingSource,
+)
 from app.core.config import get_settings
 from app.graph.state import DesignQAState
 from app.graph.workflow import run_design_qa
@@ -165,7 +171,8 @@ def test_route_after_supervisor_goes_to_accessibility_after_visual_comparison() 
     assert route_after_supervisor(state) == NODE_ACCESSIBILITY
 
 
-def test_route_after_supervisor_ends_once_accessibility_report_is_set() -> None:
+def _fully_analyzed_state() -> DesignQAState:
+    """Everything up to (but not including) the findings aggregation."""
     state = _state()
     state.design_analysis = DesignAnalysisResult.model_validate(ANALYSIS_RESULT)
     state.production_screenshot = b"fake-production-png"
@@ -176,12 +183,22 @@ def test_route_after_supervisor_ends_once_accessibility_report_is_set() -> None:
     state.accessibility_interpretation = AccessibilityInterpretation.model_validate(
         ACCESSIBILITY_INTERPRETATION
     )
+    return state
+
+
+def test_route_after_supervisor_goes_to_aggregation_after_accessibility() -> None:
+    assert route_after_supervisor(_fully_analyzed_state()) == NODE_AGGREGATE_FINDINGS
+
+
+def test_route_after_supervisor_ends_once_findings_are_aggregated() -> None:
+    state = _fully_analyzed_state()
+    state.aggregated_findings = AggregatedFindings(problems_found=False, findings=[])
 
     assert route_after_supervisor(state) == NODE_END
 
 
 @respx.mock
-async def test_run_design_qa_returns_all_four_agents_output(monkeypatch, fixture_server) -> None:
+async def test_run_design_qa_returns_every_nodes_output(monkeypatch, fixture_server) -> None:
     monkeypatch.setattr(get_settings(), "anthropic_api_key", "test-key")
     # design_analysis, visual_comparison, and (if capture_fixture.html has
     # any axe-core violations — it's missing <html lang>, so it should)
@@ -217,6 +234,18 @@ async def test_run_design_qa_returns_all_four_agents_output(monkeypatch, fixture
     )
     assert final_state.accessibility_report is not None
     assert final_state.accessibility_interpretation is not None
+
+    # The aggregation ran last and saw both agents' findings — the mocked
+    # visual result reports one major finding, so it must appear, and
+    # problems_found must be True.
+    aggregated = final_state.aggregated_findings
+    assert aggregated is not None
+    assert aggregated.problems_found is True
+    assert any(
+        finding.source == FindingSource.VISUAL_COMPARISON
+        and finding.title == VISUAL_COMPARISON_RESULT["findings"][0]["title"]
+        for finding in aggregated.findings
+    )
 
     # The Design Analysis call carried the Figma image and metadata...
     first_request = json.loads(route.calls[0].request.content)

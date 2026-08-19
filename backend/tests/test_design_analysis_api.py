@@ -175,6 +175,10 @@ async def test_design_analysis_lifecycle(monkeypatch, tmp_path, fixture_server) 
         assert analysis["diff_image_key"] is not None
         assert analysis["accessibility_report"] is not None
         assert analysis["accessibility_interpretation"] is not None
+        # The merged view every node's findings roll up into — the mocked
+        # visual result reports one finding, so it can't be empty.
+        assert analysis["aggregated_findings"]["problems_found"] is True
+        assert len(analysis["aggregated_findings"]["findings"]) >= 1
 
         list_response = await client.get(f"/api/v1/projects/{project_id}/design-analysis")
         assert list_response.status_code == 200

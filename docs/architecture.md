@@ -52,8 +52,8 @@ backend/app/
 ├── models/       SQLAlchemy ORM models          (added when we persist data)
 ├── schemas/      Pydantic request/response models (added as endpoints need them)
 ├── services/     Business logic, orchestration    (added when logic exists beyond routing)
-├── agents/       LangGraph runtime agents          (Design Analysis + Production Analysis + Visual Comparison + Accessibility + Supervisor built — Phase 3)
-├── graph/        LangGraph graph definition/state   (Design Analysis + Production Analysis + Visual Comparison + Accessibility workflow built — Phase 3)
+├── agents/       LangGraph runtime nodes            (Supervisor + all four inspection agents + findings aggregation built — Phase 3)
+├── graph/        LangGraph graph definition/state   (workflow through findings aggregation built — Phase 3)
 ├── tools/        Agent tool implementations          (not yet built — Phase 3+)
 ├── integrations/ Figma, Playwright, axe-core clients  (not yet built — Phase 1+)
 └── evals/        AI evaluation harness                (not yet built — Phase 8)
@@ -65,36 +65,49 @@ straightforward query patterns, SQLAlchemy sessions used directly from
 `services/` are simpler to read and debug. We'll introduce a repository
 layer only if query logic starts duplicating across services.
 
-## Runtime multi-agent workflow (Design Analysis + Production Analysis + Visual Comparison + Accessibility vertical slices built)
+## Runtime multi-agent workflow (all four inspection agents + findings aggregation built)
 
 Design Drift's own agents (distinct from the Claude Code agents used to
 *build* this repo — see `.claude/agents/`) are implemented as LangGraph
 nodes operating on one shared, structured state object — not by passing
 free-form natural-language messages between agents.
 
-The Supervisor, Design Analysis Agent, Production Analysis Agent, Visual
-Comparison Agent, and Accessibility Agent are wired up so far
-(`app/graph/workflow.py`, `app/agents/`): `START -> supervisor ->
-(design_analysis -> supervisor)* -> (production_analysis -> supervisor)*
--> (visual_comparison -> supervisor)* -> (accessibility -> supervisor)*
--> END`, all exposed together via one `POST
-/api/v1/projects/{project_id}/design-analysis` call — this is also the
-last node before the graph's `aggregate findings -> route` branch point in
-the target diagram below, so what remains (Code Analysis, Fix Agent,
-Verification, human-in-the-loop) is a different kind of work: routing on
-what's been found so far, not another independent inspection step. Three
-caveats against the target table below: Production Analysis today only
-covers the "screenshot" half of its planned tool set (no DOM/
-computed-style extraction yet); this graph's Visual Comparison doesn't
-fold in accessibility context into its own judgment the way
-`app/services/reviews.py`'s older, Scan-scoped version does — Accessibility
-runs as its own separate node/judgment here instead; and Accessibility
-skips its LLM call entirely when axe-core finds zero violations (nothing
-to interpret). Both `app/services/reviews.py` (Scan-scoped) and this
-graph's Visual Comparison node (Project-scoped) exist side by side for
-now, rather than one replacing the other. The diagram below is the target
-shape once the remaining agents land — each new one extends the
-Supervisor's routing rather than inventing its own graph.
+The Supervisor, all four inspection agents (Design Analysis, Production
+Analysis, Visual Comparison, Accessibility), and the findings aggregation
+are wired up so far (`app/graph/workflow.py`, `app/agents/`): `START ->
+supervisor -> (design_analysis -> supervisor)* -> (production_analysis ->
+supervisor)* -> (visual_comparison -> supervisor)* -> (accessibility ->
+supervisor)* -> (aggregate_findings -> supervisor)* -> END`, all exposed
+together via one `POST /api/v1/projects/{project_id}/design-analysis`
+call.
+
+That covers everything in the target flow below up to `aggregate
+findings`. What remains is a different kind of work — deciding what to do
+about findings (Code Analysis, Fix Agent, Verification, human-in-the-loop)
+rather than gathering more of them.
+
+Caveats against the target table below:
+
+- **The `route: problems found?` fork isn't wired yet.** The data it will
+  branch on (`aggregated_findings.problems_found`) is computed and
+  persisted now, but both branches would currently land on END, since the
+  Code Analysis Agent the "yes" branch leads to doesn't exist. The fork
+  lands when there's somewhere different to fork to.
+- **Production Analysis** covers only the "screenshot" half of its planned
+  tool set — no DOM/computed-style extraction yet.
+- **Visual Comparison** here doesn't fold accessibility context into its
+  own judgment the way `app/services/reviews.py`'s older, Scan-scoped
+  version does; Accessibility runs as its own separate node/judgment
+  instead, and the two are merged afterwards by `aggregate_findings`.
+- **Accessibility** skips its LLM call entirely when axe-core finds zero
+  violations (nothing to interpret).
+- Both `app/services/reviews.py` (Scan-scoped) and this graph's Visual
+  Comparison node (Project-scoped) exist side by side for now, rather than
+  one replacing the other.
+
+The diagram below is the target shape once the remaining agents land —
+each new one extends the Supervisor's routing rather than inventing its
+own graph.
 
 ```
 START
@@ -103,7 +116,7 @@ START
   → analyze production       (Production Analysis Agent)
   → compare                  (Visual Comparison Agent)
   → accessibility analysis   (Accessibility Agent)
-  → aggregate findings
+  → aggregate findings       (deterministic — merge/triage, no LLM)
   → route: problems found?
       no  → finalize report → END
       yes → code analysis    (Code Analysis Agent)
@@ -143,6 +156,9 @@ Deterministic tasks use deterministic tools, not LLM calls:
 - Element geometry, CSS values, navigation, screenshots → Playwright/DOM APIs
 - Accessibility rule violations → axe-core
 - Pixel-level image comparison → image processing (not vision reasoning)
+- Merging/sorting findings the agents already judged → plain Python
+  (`app/agents/aggregate_findings.py`); re-asking a model to combine two
+  lists it just produced would add cost and nondeterminism for nothing
 
 The LLM (multimodal where relevant) is reserved for judgment calls that
 genuinely need reasoning: interpreting design *intent*, deciding whether a

@@ -3,10 +3,11 @@ docs/architecture.md's "Runtime multi-agent workflow"). One typed Pydantic
 model that every node reads/writes explicit fields on — no free-form
 message-passing between agents (docs/principles.md #4).
 
-Grows one agent's worth of fields at a time as each vertical slice lands
+Grows one node's worth of fields at a time as each vertical slice lands
 (docs/principles.md #1): Design Analysis, Production Analysis, Visual
-Comparison, now Accessibility. Later agents add their own fields the same
-way rather than this being speculatively modeled up front.
+Comparison, Accessibility, now the findings aggregation. Later agents add
+their own fields the same way rather than this being speculatively modeled
+up front.
 """
 
 from typing import Any
@@ -14,7 +15,11 @@ from uuid import UUID
 
 from pydantic import BaseModel
 
-from app.agents.types import AccessibilityInterpretation, DesignAnalysisResult
+from app.agents.types import (
+    AccessibilityInterpretation,
+    AggregatedFindings,
+    DesignAnalysisResult,
+)
 from app.integrations.axe.types import AccessibilityReport
 from app.integrations.imaging.types import ComparisonResult
 from app.integrations.llm.types import VisualReviewResult
@@ -54,6 +59,12 @@ class DesignQAState(BaseModel):
     # see app.agents.accessibility.
     accessibility_report: AccessibilityReport | None = None
     accessibility_interpretation: AccessibilityInterpretation | None = None
+
+    # --- Findings aggregation's output ---
+    # Every agent's findings merged into one triaged list, plus the
+    # problems_found flag docs/architecture.md's flow branches on — see
+    # app.agents.aggregate_findings.
+    aggregated_findings: AggregatedFindings | None = None
 
     # Set by the Supervisor when it decides the workflow can't proceed
     # (e.g. no usable Figma data) — distinct from a node's own tool/LLM

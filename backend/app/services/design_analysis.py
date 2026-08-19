@@ -7,10 +7,11 @@ integrations directly, per those modules' docstrings), this is the first
 place an actual LangGraph graph runs — see app.graph.workflow for the
 graph itself and docs/architecture.md for where this fits in the target
 multi-agent workflow. The graph currently runs Design Analysis, then
-Production Analysis, then Visual Comparison, then Accessibility (see
-app.graph.state.DesignQAState); this function's name/table stay
-"design_analysis" rather than being renamed each time the graph gains an
-agent, same as Scan's name didn't change when breakpoints were added to it.
+Production Analysis, then Visual Comparison, then Accessibility, then the
+findings aggregation (see app.graph.state.DesignQAState); this function's
+name/table stay "design_analysis" rather than being renamed each time the
+graph gains a node, same as Scan's name didn't change when breakpoints
+were added to it.
 
 Like app.services.reviews, this is never triggered automatically — it
 costs real money and launches a real browser per call, so it's an
@@ -62,6 +63,7 @@ async def create_design_analysis(
     assert final_state.visual_comparison is not None
     assert final_state.accessibility_report is not None
     assert final_state.accessibility_interpretation is not None
+    assert final_state.aggregated_findings is not None
 
     analysis_id = uuid4()
     production_screenshot_key = f"design-analyses/{analysis_id}/production.png"
@@ -83,6 +85,7 @@ async def create_design_analysis(
         accessibility_interpretation=final_state.accessibility_interpretation.model_dump(
             mode="json"
         ),
+        aggregated_findings=final_state.aggregated_findings.model_dump(mode="json"),
     )
     db.add(design_analysis)
     await db.commit()
