@@ -4,9 +4,9 @@ between agents; no tools of its own").
 
 Routing is a simple "what hasn't run yet" check over state, in the same
 order agents appear in docs/architecture.md's flow: Design Analysis,
-Production Analysis, Visual Comparison. Adding a later agent
-(Accessibility, ...) means adding one more `if state.<its output> is
-None: return NODE_<it>` line here and to the graph's path_map in
+Production Analysis, Visual Comparison, Accessibility. Adding a later
+agent (Code Analysis, ...) means adding one more `if state.<its output>
+is None: return NODE_<it>` line here and to the graph's path_map in
 app.graph.workflow — each new agent doesn't need to decide for itself
 whether it should run.
 """
@@ -18,6 +18,7 @@ from app.graph.state import DesignQAState
 NODE_DESIGN_ANALYSIS = "design_analysis"
 NODE_PRODUCTION_ANALYSIS = "production_analysis"
 NODE_VISUAL_COMPARISON = "visual_comparison"
+NODE_ACCESSIBILITY = "accessibility"
 NODE_END = "end"
 
 
@@ -36,4 +37,6 @@ def route_after_supervisor(state: DesignQAState) -> str:
         return NODE_PRODUCTION_ANALYSIS
     if state.visual_comparison is None:
         return NODE_VISUAL_COMPARISON
+    if state.accessibility_report is None:
+        return NODE_ACCESSIBILITY
     return NODE_END

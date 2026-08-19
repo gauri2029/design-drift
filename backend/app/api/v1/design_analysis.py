@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
+from app.integrations.axe.exceptions import AccessibilityScanError
 from app.integrations.llm.exceptions import LLMNotConfiguredError, LLMResponseError
 from app.integrations.playwright.exceptions import PlaywrightCaptureError
 from app.integrations.storage.base import StorageBackend
@@ -40,6 +41,8 @@ async def create_design_analysis(
     except LLMResponseError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
     except PlaywrightCaptureError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    except AccessibilityScanError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
     return DesignAnalysisRead.model_validate(analysis)
 

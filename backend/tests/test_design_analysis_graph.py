@@ -15,6 +15,7 @@ from httpx import Response
 from PIL import Image
 
 from app.agents.supervisor import (
+    NODE_ACCESSIBILITY,
     NODE_DESIGN_ANALYSIS,
     NODE_END,
     NODE_PRODUCTION_ANALYSIS,
@@ -22,10 +23,11 @@ from app.agents.supervisor import (
     route_after_supervisor,
     supervisor_node,
 )
-from app.agents.types import DesignAnalysisResult
+from app.agents.types import AccessibilityInterpretation, DesignAnalysisResult
 from app.core.config import get_settings
 from app.graph.state import DesignQAState
 from app.graph.workflow import run_design_qa
+from app.integrations.axe.types import AccessibilityReport
 from app.integrations.imaging.types import ComparisonResult, ImageDimensions
 from app.integrations.llm.exceptions import LLMNotConfiguredError
 from app.integrations.llm.types import VisualReviewResult
@@ -62,6 +64,16 @@ VISUAL_COMPARISON_RESULT = {
             "description": "Figma shows a wider button; production renders narrower.",
             "evidence": "The diff image highlights the button edge.",
             "likely_area": "the primary call-to-action button",
+        }
+    ],
+}
+ACCESSIBILITY_INTERPRETATION = {
+    "summary": "One serious color-contrast violation affecting the primary CTA button.",
+    "most_important_issues": [
+        {
+            "violation_id": "color-contrast",
+            "user_impact": "Low-vision users may not be able to read the button's label.",
+            "priority": "high",
         }
     ],
 }
@@ -142,7 +154,7 @@ def test_route_after_supervisor_goes_to_visual_comparison_after_production_analy
     assert route_after_supervisor(state) == NODE_VISUAL_COMPARISON
 
 
-def test_route_after_supervisor_ends_once_visual_comparison_is_set() -> None:
+def test_route_after_supervisor_goes_to_accessibility_after_visual_comparison() -> None:
     state = _state()
     state.design_analysis = DesignAnalysisResult.model_validate(ANALYSIS_RESULT)
     state.production_screenshot = b"fake-production-png"
@@ -150,18 +162,37 @@ def test_route_after_supervisor_ends_once_visual_comparison_is_set() -> None:
     state.diff_screenshot = b"fake-diff-png"
     state.visual_comparison = VisualReviewResult.model_validate(VISUAL_COMPARISON_RESULT)
 
+    assert route_after_supervisor(state) == NODE_ACCESSIBILITY
+
+
+def test_route_after_supervisor_ends_once_accessibility_report_is_set() -> None:
+    state = _state()
+    state.design_analysis = DesignAnalysisResult.model_validate(ANALYSIS_RESULT)
+    state.production_screenshot = b"fake-production-png"
+    state.comparison_result = _SAMPLE_COMPARISON_RESULT
+    state.diff_screenshot = b"fake-diff-png"
+    state.visual_comparison = VisualReviewResult.model_validate(VISUAL_COMPARISON_RESULT)
+    state.accessibility_report = AccessibilityReport(violations=[], violation_count=0)
+    state.accessibility_interpretation = AccessibilityInterpretation.model_validate(
+        ACCESSIBILITY_INTERPRETATION
+    )
+
     assert route_after_supervisor(state) == NODE_END
 
 
 @respx.mock
-async def test_run_design_qa_returns_all_three_agents_output(monkeypatch, fixture_server) -> None:
+async def test_run_design_qa_returns_all_four_agents_output(monkeypatch, fixture_server) -> None:
     monkeypatch.setattr(get_settings(), "anthropic_api_key", "test-key")
-    # design_analysis and visual_comparison each make one LLM call, in that
-    # order — respond with each agent's own result shape in turn.
+    # design_analysis, visual_comparison, and (if capture_fixture.html has
+    # any axe-core violations — it's missing <html lang>, so it should)
+    # accessibility each make one LLM call, in that order. A 3rd entry is
+    # harmless if accessibility ends up with zero violations and skips its
+    # LLM call entirely (see app.agents.accessibility's docstring).
     route = respx.post("https://api.anthropic.com/v1/messages").mock(
         side_effect=[
             Response(200, json=_anthropic_response(ANALYSIS_RESULT)),
             Response(200, json=_anthropic_response(VISUAL_COMPARISON_RESULT)),
+            Response(200, json=_anthropic_response(ACCESSIBILITY_INTERPRETATION)),
         ]
     )
 
@@ -184,6 +215,8 @@ async def test_run_design_qa_returns_all_three_agents_output(monkeypatch, fixtur
     assert final_state.visual_comparison == VisualReviewResult.model_validate(
         VISUAL_COMPARISON_RESULT
     )
+    assert final_state.accessibility_report is not None
+    assert final_state.accessibility_interpretation is not None
 
     # The Design Analysis call carried the Figma image and metadata...
     first_request = json.loads(route.calls[0].request.content)
@@ -191,12 +224,19 @@ async def test_run_design_qa_returns_all_three_agents_output(monkeypatch, fixtur
     assert first_blocks[0]["type"] == "image"
     assert "Hero" in first_blocks[-1]["text"]
 
-    # ...and the Visual Comparison call carried all three images (Figma,
-    # production, diff) plus the deterministic pixel-diff percentage.
+    # ...the Visual Comparison call carried all three images (Figma,
+    # production, diff) plus the deterministic pixel-diff percentage...
     second_request = json.loads(route.calls[1].request.content)
     second_blocks = second_request["messages"][0]["content"]
     assert sum(1 for block in second_blocks if block["type"] == "image") == 3
     assert "pixel diff" in second_blocks[-1]["text"]
+
+    # ...and if accessibility made a call at all, it was text-only (axe
+    # violation data, not images).
+    if route.call_count == 3:
+        third_request = json.loads(route.calls[2].request.content)
+        third_blocks = third_request["messages"][0]["content"]
+        assert all(block["type"] == "text" for block in third_blocks)
 
 
 @respx.mock
