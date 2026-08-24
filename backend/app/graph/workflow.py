@@ -1,17 +1,23 @@
 """Builds and compiles the Design QA LangGraph workflow (see
-docs/architecture.md's "Runtime multi-agent workflow"). Five vertical
+docs/architecture.md's "Runtime multi-agent workflow"). Six vertical
 slices exist so far:
 
     START -> supervisor -> (design_analysis -> supervisor)*
                          -> (production_analysis -> supervisor)*
                          -> (visual_comparison -> supervisor)*
                          -> (accessibility -> supervisor)*
-                         -> (aggregate_findings -> supervisor)* -> END
+                         -> (aggregate_findings -> supervisor)*
+                         -> (code_analysis -> supervisor)? -> END
 
 The supervisor is revisited after each node so it observes the updated
 state before routing to the next one (or to END), rather than any node
-ending the graph itself — the same loop-back shape a later agent (code
-analysis, ...) will chain through.
+ending the graph itself — the same loop-back shape a later agent (fix
+agent, ...) will chain through.
+
+Note the `?` on code_analysis: every node before it always runs, but that
+one is conditional on findings existing and a source checkout being
+configured (see app.agents.supervisor). The graph shape doesn't encode
+that — the Supervisor's routing does.
 """
 
 from langgraph.graph import END, START, StateGraph
@@ -19,11 +25,13 @@ from langgraph.graph.state import CompiledStateGraph
 
 from app.agents.accessibility import accessibility_node
 from app.agents.aggregate_findings import aggregate_findings_node
+from app.agents.code_analysis import code_analysis_node
 from app.agents.design_analysis import design_analysis_node
 from app.agents.production_analysis import production_analysis_node
 from app.agents.supervisor import (
     NODE_ACCESSIBILITY,
     NODE_AGGREGATE_FINDINGS,
+    NODE_CODE_ANALYSIS,
     NODE_DESIGN_ANALYSIS,
     NODE_END,
     NODE_PRODUCTION_ANALYSIS,
@@ -45,6 +53,7 @@ def build_design_qa_graph() -> (
     graph.add_node(NODE_VISUAL_COMPARISON, visual_comparison_node)
     graph.add_node(NODE_ACCESSIBILITY, accessibility_node)
     graph.add_node(NODE_AGGREGATE_FINDINGS, aggregate_findings_node)
+    graph.add_node(NODE_CODE_ANALYSIS, code_analysis_node)
 
     graph.add_edge(START, "supervisor")
     graph.add_conditional_edges(
@@ -56,6 +65,7 @@ def build_design_qa_graph() -> (
             NODE_VISUAL_COMPARISON: NODE_VISUAL_COMPARISON,
             NODE_ACCESSIBILITY: NODE_ACCESSIBILITY,
             NODE_AGGREGATE_FINDINGS: NODE_AGGREGATE_FINDINGS,
+            NODE_CODE_ANALYSIS: NODE_CODE_ANALYSIS,
             NODE_END: END,
         },
     )
@@ -64,6 +74,7 @@ def build_design_qa_graph() -> (
     graph.add_edge(NODE_VISUAL_COMPARISON, "supervisor")
     graph.add_edge(NODE_ACCESSIBILITY, "supervisor")
     graph.add_edge(NODE_AGGREGATE_FINDINGS, "supervisor")
+    graph.add_edge(NODE_CODE_ANALYSIS, "supervisor")
 
     return graph.compile()
 

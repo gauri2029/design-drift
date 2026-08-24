@@ -25,6 +25,15 @@ class Settings(BaseSettings):
     # Relative to backend/'s working directory, so it lands at repo-root/storage.
     storage_root: str = "../storage"
 
+    # Root directory under which target apps' source checkouts live. A
+    # Project's `source_path` is resolved *relative to this* and confined
+    # inside it (see app.tools.repo_search.resolve_source_root) rather than
+    # being an arbitrary absolute path: the Code Analysis Agent reads these
+    # files and sends what it finds to a third-party LLM API, so an
+    # unconstrained path would turn a project field into "read any file
+    # this process can reach, then upload it".
+    source_root: str = "../sources"
+
     figma_access_token: str = ""
     figma_api_base_url: str = "https://api.figma.com/v1"
 

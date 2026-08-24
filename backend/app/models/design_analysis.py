@@ -61,6 +61,11 @@ class DesignAnalysis(Base):
     # stored rather than recomputed on read so the persisted row matches
     # exactly what the graph produced, even if the merge rules change.
     aggregated_findings: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
+    # Code Analysis Agent's mapping of findings onto likely source files.
+    # Null on runs where it didn't run at all — no problems found, or the
+    # project has no source checkout (see app.agents.supervisor's fork), so
+    # unlike the columns above this one stays null on plenty of good runs.
+    code_analysis: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

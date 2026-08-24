@@ -69,9 +69,7 @@ async def test_generate_structured_raises_when_key_not_configured(monkeypatch) -
     monkeypatch.setattr(get_settings(), "anthropic_api_key", "")
 
     with pytest.raises(LLMNotConfiguredError):
-        await generate_structured(
-            system="s", text="t", images=[], output_format=_Greeting
-        )
+        await generate_structured(system="s", text="t", images=[], output_format=_Greeting)
 
 
 @respx.mock
@@ -94,6 +92,4 @@ async def test_generate_structured_raises_when_response_is_not_valid_json(monkey
     )
 
     with pytest.raises(LLMResponseError):
-        await generate_structured(
-            system="s", text="t", images=[], output_format=_Greeting
-        )
+        await generate_structured(system="s", text="t", images=[], output_format=_Greeting)

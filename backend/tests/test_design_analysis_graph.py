@@ -7,6 +7,7 @@ the graph's own wiring is actually exercised).
 
 import json
 from io import BytesIO
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
@@ -17,6 +18,7 @@ from PIL import Image
 from app.agents.supervisor import (
     NODE_ACCESSIBILITY,
     NODE_AGGREGATE_FINDINGS,
+    NODE_CODE_ANALYSIS,
     NODE_DESIGN_ANALYSIS,
     NODE_END,
     NODE_PRODUCTION_ANALYSIS,
@@ -27,6 +29,7 @@ from app.agents.supervisor import (
 from app.agents.types import (
     AccessibilityInterpretation,
     AggregatedFindings,
+    CodeAnalysisResult,
     DesignAnalysisResult,
     FindingSource,
 )
@@ -38,6 +41,7 @@ from app.integrations.imaging.types import ComparisonResult, ImageDimensions
 from app.integrations.llm.exceptions import LLMNotConfiguredError
 from app.integrations.llm.types import VisualReviewResult
 from app.integrations.playwright.exceptions import PlaywrightCaptureError
+from tests.conftest import mock_anthropic_by_agent
 
 FIGMA_NODE = {
     "name": "Hero",
@@ -83,6 +87,23 @@ ACCESSIBILITY_INTERPRETATION = {
         }
     ],
 }
+CODE_ANALYSIS_RESULT = {
+    "summary": "The findings map cleanly onto the button component.",
+    "locations": [
+        {
+            "finding_title": "Button is narrower than designed",
+            "no_match": False,
+            "location": {
+                "file_path": "src/components/Button.tsx",
+                "line_start": 1,
+                "line_end": 1,
+                "code_evidence": '<button id="hero-cta" class="btn-primary">Get started</button>',
+            },
+            "explanation": "The snippet shows the button's width class.",
+            "confidence": "medium",
+        }
+    ],
+}
 _SAMPLE_COMPARISON_RESULT = ComparisonResult(
     expected_dimensions=ImageDimensions(width=1400, height=900),
     actual_dimensions=ImageDimensions(width=1400, height=900),
@@ -101,12 +122,20 @@ def _png_bytes(size: tuple[int, int] = (10, 10)) -> bytes:
     return buffer.getvalue()
 
 
-def _state(*, figma_node: dict | None = FIGMA_NODE, target_url: str = "https://example.com"):
+def _state(
+    *,
+    figma_node: dict | None = FIGMA_NODE,
+    target_url: str = "https://example.com",
+    source_root: Path | None = None,
+    target_selector: str | None = None,
+):
     return DesignQAState(
         project_id=uuid4(),
         figma_node=figma_node if figma_node is not None else {},
         figma_screenshot=_png_bytes(),
         target_url=target_url,
+        source_root=source_root,
+        target_selector=target_selector,
     )
 
 
@@ -190,9 +219,40 @@ def test_route_after_supervisor_goes_to_aggregation_after_accessibility() -> Non
     assert route_after_supervisor(_fully_analyzed_state()) == NODE_AGGREGATE_FINDINGS
 
 
-def test_route_after_supervisor_ends_once_findings_are_aggregated() -> None:
+def test_route_after_supervisor_ends_when_aggregation_found_no_problems() -> None:
+    # The `route: problems found?` fork, "no" side — nothing to locate in
+    # the code, so the run ends even though a source checkout is available.
     state = _fully_analyzed_state()
     state.aggregated_findings = AggregatedFindings(problems_found=False, findings=[])
+    state.source_root = Path("/tmp/some-checkout")
+
+    assert route_after_supervisor(state) == NODE_END
+
+
+def test_route_after_supervisor_goes_to_code_analysis_when_problems_were_found() -> None:
+    # ...and the "yes" side.
+    state = _fully_analyzed_state()
+    state.aggregated_findings = AggregatedFindings(problems_found=True, findings=[])
+    state.source_root = Path("/tmp/some-checkout")
+
+    assert route_after_supervisor(state) == NODE_CODE_ANALYSIS
+
+
+def test_route_after_supervisor_skips_code_analysis_without_a_source_checkout() -> None:
+    # Problems found, but nowhere to look — ending is correct here, not
+    # failing: source_path is optional (see app.agents.supervisor).
+    state = _fully_analyzed_state()
+    state.aggregated_findings = AggregatedFindings(problems_found=True, findings=[])
+    state.source_root = None
+
+    assert route_after_supervisor(state) == NODE_END
+
+
+def test_route_after_supervisor_ends_once_code_analysis_has_run() -> None:
+    state = _fully_analyzed_state()
+    state.aggregated_findings = AggregatedFindings(problems_found=True, findings=[])
+    state.source_root = Path("/tmp/some-checkout")
+    state.code_analysis = CodeAnalysisResult.model_validate(CODE_ANALYSIS_RESULT)
 
     assert route_after_supervisor(state) == NODE_END
 
@@ -205,12 +265,12 @@ async def test_run_design_qa_returns_every_nodes_output(monkeypatch, fixture_ser
     # accessibility each make one LLM call, in that order. A 3rd entry is
     # harmless if accessibility ends up with zero violations and skips its
     # LLM call entirely (see app.agents.accessibility's docstring).
-    route = respx.post("https://api.anthropic.com/v1/messages").mock(
-        side_effect=[
-            Response(200, json=_anthropic_response(ANALYSIS_RESULT)),
-            Response(200, json=_anthropic_response(VISUAL_COMPARISON_RESULT)),
-            Response(200, json=_anthropic_response(ACCESSIBILITY_INTERPRETATION)),
-        ]
+    route = mock_anthropic_by_agent(
+        {
+            "design_analysis": ANALYSIS_RESULT,
+            "visual_comparison": VISUAL_COMPARISON_RESULT,
+            "accessibility": ACCESSIBILITY_INTERPRETATION,
+        }
     )
 
     host, port = fixture_server.server_address[:2]
@@ -300,3 +360,92 @@ async def test_run_design_qa_propagates_capture_error_after_design_analysis(monk
     # No fixture server for this target_url — the page load itself fails.
     with pytest.raises(PlaywrightCaptureError):
         await run_design_qa(_state(target_url="http://127.0.0.1:1/unreachable"))
+
+
+@respx.mock
+async def test_run_design_qa_runs_code_analysis_when_a_source_checkout_exists(
+    monkeypatch, fixture_server, tmp_path
+) -> None:
+    """The `route: problems found?` fork's "yes" side, end to end.
+
+    The mocked visual result reports material drift plus one finding, so
+    the aggregation sets problems_found — which, with a source checkout
+    present, is what sends the graph through code_analysis.
+    """
+    monkeypatch.setattr(get_settings(), "anthropic_api_key", "test-key")
+
+    checkout = tmp_path / "checkout" / "src" / "components"
+    checkout.mkdir(parents=True)
+    # Contains the anchor the search will look for (from target_selector
+    # below) on a known line, plus a decoy file with none of it.
+    (checkout / "Button.tsx").write_text(
+        "\n".join(
+            [
+                "import React from 'react'",
+                "",
+                'export const Button = () => <div id="card" />',
+            ]
+        )
+    )
+    (checkout / "Header.tsx").write_text("export const Header = () => <nav />")
+
+    route = mock_anthropic_by_agent(
+        {
+            "design_analysis": ANALYSIS_RESULT,
+            "visual_comparison": VISUAL_COMPARISON_RESULT,
+            "accessibility": ACCESSIBILITY_INTERPRETATION,
+            "code_analysis": CODE_ANALYSIS_RESULT,
+        }
+    )
+
+    host, port = fixture_server.server_address[:2]
+    final_state = await run_design_qa(
+        _state(
+            target_url=f"http://{host}:{port}/capture_fixture.html",
+            source_root=tmp_path / "checkout",
+            target_selector="#card",
+        )
+    )
+
+    assert final_state.aggregated_findings is not None
+    assert final_state.aggregated_findings.problems_found is True
+    assert final_state.code_analysis == CodeAnalysisResult.model_validate(CODE_ANALYSIS_RESULT)
+
+    # The Code Analysis call is last and text-only, and carries retrieved
+    # *code*, not just a file list: the matching file, the real line number
+    # the anchor sits on, and the line itself.
+    last_request = json.loads(route.calls[-1].request.content)
+    last_blocks = last_request["messages"][0]["content"]
+    prompt = last_blocks[-1]["text"]
+    assert all(block["type"] == "text" for block in last_blocks)
+    assert "src/components/Button.tsx" in prompt
+    assert '3: export const Button = () => <div id="card" />' in prompt
+    # The decoy has none of the evidence, so the search must not offer it.
+    assert "Header.tsx" not in prompt
+    # Paths stay repo-relative — no host layout leaks into the prompt.
+    assert str(tmp_path) not in prompt
+
+
+@respx.mock
+async def test_run_design_qa_skips_code_analysis_without_a_source_checkout(
+    monkeypatch, fixture_server
+) -> None:
+    """The same run, minus a checkout: ends after aggregation, no error."""
+    monkeypatch.setattr(get_settings(), "anthropic_api_key", "test-key")
+    mock_anthropic_by_agent(
+        {
+            "design_analysis": ANALYSIS_RESULT,
+            "visual_comparison": VISUAL_COMPARISON_RESULT,
+            "accessibility": ACCESSIBILITY_INTERPRETATION,
+        }
+    )
+
+    host, port = fixture_server.server_address[:2]
+    final_state = await run_design_qa(
+        _state(target_url=f"http://{host}:{port}/capture_fixture.html", source_root=None)
+    )
+
+    assert final_state.error is None
+    assert final_state.aggregated_findings is not None
+    assert final_state.aggregated_findings.problems_found is True
+    assert final_state.code_analysis is None
