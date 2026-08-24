@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict
 from app.agents.types import (
     AccessibilityInterpretation,
     AggregatedFindings,
+    CodeAnalysisResult,
     DesignAnalysisResult,
 )
 from app.integrations.axe.types import AccessibilityReport
@@ -27,4 +28,6 @@ class DesignAnalysisRead(BaseModel):
     accessibility_report: AccessibilityReport | None
     accessibility_interpretation: AccessibilityInterpretation | None
     aggregated_findings: AggregatedFindings | None
+    # Null when Code Analysis didn't run — see app.agents.supervisor's fork.
+    code_analysis: CodeAnalysisResult | None
     created_at: datetime

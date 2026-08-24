@@ -22,6 +22,7 @@ from app.integrations.storage.local import LocalStorageBackend, get_storage_back
 from app.main import app
 from app.models.design_analysis import DesignAnalysis
 from app.models.project import Project
+from tests.conftest import mock_anthropic_by_agent
 
 FILE_KEY = "abc123"
 NODE_ID = "1:23"
@@ -85,6 +86,25 @@ ACCESSIBILITY_INTERPRETATION = {
 }
 
 
+CODE_ANALYSIS_RESULT = {
+    "summary": "The findings map cleanly onto the button component.",
+    "locations": [
+        {
+            "finding_title": "Button is narrower than designed",
+            "no_match": False,
+            "location": {
+                "file_path": "src/components/Button.tsx",
+                "line_start": 1,
+                "line_end": 1,
+                "code_evidence": '<button id="hero-cta" class="btn-primary">Get started</button>',
+            },
+            "explanation": "The snippet shows the button's width class.",
+            "confidence": "medium",
+        }
+    ],
+}
+
+
 def _png_bytes(size: tuple[int, int], color: tuple[int, int, int]) -> bytes:
     image = Image.new("RGB", size, color)
     buffer = BytesIO()
@@ -115,7 +135,9 @@ async def _clean_up():
         await session.commit()
 
 
-async def _create_project(client: AsyncClient, fixture_server) -> str:
+async def _create_project(
+    client: AsyncClient, fixture_server, *, source_path: str | None = None
+) -> str:
     host, port = fixture_server.server_address[:2]
     response = await client.post(
         "/api/v1/projects",
@@ -125,10 +147,21 @@ async def _create_project(client: AsyncClient, fixture_server) -> str:
             "figma_node_id": NODE_ID,
             "target_url": f"http://{host}:{port}/capture_fixture.html",
             "target_selector": "#card",
+            "source_path": source_path,
         },
     )
     assert response.status_code == 201, response.text
     return response.json()["id"]
+
+
+def _mock_figma(figma_png: bytes) -> None:
+    respx.get(f"https://api.figma.com/v1/files/{FILE_KEY}/nodes").mock(
+        return_value=Response(200, json=NODES_RESPONSE)
+    )
+    respx.get(f"https://api.figma.com/v1/images/{FILE_KEY}").mock(
+        return_value=Response(200, json=IMAGES_RESPONSE)
+    )
+    respx.get(IMAGE_URL).mock(return_value=Response(200, content=figma_png))
 
 
 @respx.mock
@@ -137,24 +170,14 @@ async def test_design_analysis_lifecycle(monkeypatch, tmp_path, fixture_server) 
     monkeypatch.setattr(get_settings(), "anthropic_api_key", "test-anthropic-key")
     app.dependency_overrides[get_storage_backend] = lambda: LocalStorageBackend(root=tmp_path)
 
-    respx.get(f"https://api.figma.com/v1/files/{FILE_KEY}/nodes").mock(
-        return_value=Response(200, json=NODES_RESPONSE)
-    )
-    respx.get(f"https://api.figma.com/v1/images/{FILE_KEY}").mock(
-        return_value=Response(200, json=IMAGES_RESPONSE)
-    )
-    respx.get(IMAGE_URL).mock(
-        return_value=Response(200, content=_png_bytes((1400, 900), (255, 255, 255)))
-    )
-    # A 3rd entry is only consumed if accessibility finds violations scoped
-    # to #card and makes its own LLM call — harmless if it doesn't (see
-    # app.agents.accessibility's zero-violations short-circuit).
-    anthropic_route = respx.post("https://api.anthropic.com/v1/messages").mock(
-        side_effect=[
-            Response(200, json=_anthropic_response(ANALYSIS_RESULT)),
-            Response(200, json=_anthropic_response(VISUAL_COMPARISON_RESULT)),
-            Response(200, json=_anthropic_response(ACCESSIBILITY_INTERPRETATION)),
-        ]
+    _mock_figma(_png_bytes((1400, 900), (255, 255, 255)))
+    anthropic_route = mock_anthropic_by_agent(
+        {
+            "design_analysis": ANALYSIS_RESULT,
+            "visual_comparison": VISUAL_COMPARISON_RESULT,
+            "accessibility": ACCESSIBILITY_INTERPRETATION,
+            "code_analysis": CODE_ANALYSIS_RESULT,
+        }
     )
 
     transport = ASGITransport(app=app)
@@ -287,3 +310,75 @@ async def test_design_analysis_returns_404_when_project_missing() -> None:
         )
 
     assert response.status_code == 404
+
+
+@respx.mock
+async def test_design_analysis_maps_findings_to_source_files(
+    monkeypatch, tmp_path, fixture_server
+) -> None:
+    """A project with a source checkout gets the Code Analysis pass too."""
+    monkeypatch.setattr(get_settings(), "figma_access_token", "test-figma-token")
+    monkeypatch.setattr(get_settings(), "anthropic_api_key", "test-anthropic-key")
+    monkeypatch.setattr(get_settings(), "source_root", str(tmp_path / "sources"))
+    app.dependency_overrides[get_storage_backend] = lambda: LocalStorageBackend(root=tmp_path)
+
+    checkout = tmp_path / "sources" / "marketing-site" / "src" / "components"
+    checkout.mkdir(parents=True)
+    # The project's target_selector is "#card", so "card" is the anchor the
+    # content search looks for — this file has it, the decoy doesn't.
+    (checkout / "Button.tsx").write_text('export const Button = () => <div id="card" />')
+    (checkout / "Header.tsx").write_text("export const Header = () => <nav />")
+
+    _mock_figma(_png_bytes((1400, 900), (255, 255, 255)))
+    mock_anthropic_by_agent(
+        {
+            "design_analysis": ANALYSIS_RESULT,
+            "visual_comparison": VISUAL_COMPARISON_RESULT,
+            "accessibility": ACCESSIBILITY_INTERPRETATION,
+            "code_analysis": CODE_ANALYSIS_RESULT,
+        }
+    )
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        project_id = await _create_project(client, fixture_server, source_path="marketing-site")
+        response = await client.post(f"/api/v1/projects/{project_id}/design-analysis")
+
+    assert response.status_code == 201, response.text
+    code_analysis = response.json()["code_analysis"]
+    assert code_analysis is not None
+    location = code_analysis["locations"][0]
+    assert location["no_match"] is False
+    assert location["location"]["file_path"] == "src/components/Button.tsx"
+    assert location["location"]["line_start"] >= 1
+    assert location["location"]["code_evidence"]
+
+
+@respx.mock
+async def test_design_analysis_returns_409_for_a_source_path_outside_the_root(
+    monkeypatch, tmp_path, fixture_server
+) -> None:
+    """A source_path escaping the configured root is refused, and refused
+    *before* any paid LLM call or browser launch happens.
+    """
+    monkeypatch.setattr(get_settings(), "figma_access_token", "test-figma-token")
+    monkeypatch.setattr(get_settings(), "anthropic_api_key", "test-anthropic-key")
+    monkeypatch.setattr(get_settings(), "source_root", str(tmp_path / "sources"))
+    app.dependency_overrides[get_storage_backend] = lambda: LocalStorageBackend(root=tmp_path)
+
+    (tmp_path / "sources").mkdir()
+    (tmp_path / "secrets").mkdir()
+
+    _mock_figma(_png_bytes((1400, 900), (255, 255, 255)))
+    anthropic_route = respx.post("https://api.anthropic.com/v1/messages").mock(
+        return_value=Response(200, json=_anthropic_response(ANALYSIS_RESULT))
+    )
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        project_id = await _create_project(client, fixture_server, source_path="../secrets")
+        response = await client.post(f"/api/v1/projects/{project_id}/design-analysis")
+
+    assert response.status_code == 409
+    assert "outside" in response.json()["detail"]
+    assert anthropic_route.call_count == 0

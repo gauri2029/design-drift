@@ -8,16 +8,17 @@ place an actual LangGraph graph runs — see app.graph.workflow for the
 graph itself and docs/architecture.md for where this fits in the target
 multi-agent workflow. The graph currently runs Design Analysis, then
 Production Analysis, then Visual Comparison, then Accessibility, then the
-findings aggregation (see app.graph.state.DesignQAState); this function's
-name/table stay "design_analysis" rather than being renamed each time the
-graph gains a node, same as Scan's name didn't change when breakpoints
-were added to it.
+findings aggregation, then conditionally Code Analysis (see
+app.graph.state.DesignQAState); this function's name/table stay
+"design_analysis" rather than being renamed each time the graph gains a
+node, same as Scan's name didn't change when breakpoints were added to it.
 
 Like app.services.reviews, this is never triggered automatically — it
 costs real money and launches a real browser per call, so it's an
 explicit action the frontend gates behind a button.
 """
 
+from pathlib import Path
 from uuid import UUID, uuid4
 
 from sqlalchemy import select
@@ -29,6 +30,7 @@ from app.graph.workflow import run_design_qa
 from app.integrations.storage.base import StorageBackend
 from app.models.design_analysis import DesignAnalysis
 from app.models.project import Project
+from app.tools.repo_search import resolve_source_root
 
 
 class ProjectNotAnalyzableError(Exception):
@@ -49,6 +51,11 @@ async def create_design_analysis(
         figma_screenshot=storage.read(project.figma_screenshot_key),
         target_url=project.target_url,
         target_selector=project.target_selector,
+        # Resolved (and containment-checked) here rather than inside the
+        # Code Analysis node, so a bad path fails before any paid LLM call
+        # or browser launch happens — and so nodes never handle a raw
+        # user-supplied path themselves.
+        source_root=_resolve_source_root(project),
     )
     final_state = await run_design_qa(initial_state)
 
@@ -86,11 +93,31 @@ async def create_design_analysis(
             mode="json"
         ),
         aggregated_findings=final_state.aggregated_findings.model_dump(mode="json"),
+        # Not asserted non-None like the fields above: Code Analysis is
+        # conditional, so None here is a normal outcome (no problems found,
+        # or no source checkout) rather than a missing artifact.
+        code_analysis=(
+            final_state.code_analysis.model_dump(mode="json")
+            if final_state.code_analysis is not None
+            else None
+        ),
     )
     db.add(design_analysis)
     await db.commit()
     await db.refresh(design_analysis)
     return design_analysis
+
+
+def _resolve_source_root(project: Project) -> Path | None:
+    """None when the project has no source checkout configured.
+
+    A configured-but-unusable path is a different case and raises: it's a
+    misconfiguration the user should hear about, not something to silently
+    treat as "no source available" and skip past.
+    """
+    if not project.source_path:
+        return None
+    return resolve_source_root(project.source_path)
 
 
 async def list_design_analyses(db: AsyncSession, project_id: UUID) -> list[DesignAnalysis]:

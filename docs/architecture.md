@@ -52,9 +52,9 @@ backend/app/
 ├── models/       SQLAlchemy ORM models          (added when we persist data)
 ├── schemas/      Pydantic request/response models (added as endpoints need them)
 ├── services/     Business logic, orchestration    (added when logic exists beyond routing)
-├── agents/       LangGraph runtime nodes            (Supervisor + all four inspection agents + findings aggregation built — Phase 3)
-├── graph/        LangGraph graph definition/state   (workflow through findings aggregation built — Phase 3)
-├── tools/        Agent tool implementations          (not yet built — Phase 3+)
+├── agents/       LangGraph runtime nodes            (Supervisor + four inspection agents + aggregation + Code Analysis built — Phase 3)
+├── graph/        LangGraph graph definition/state   (workflow through Code Analysis built — Phase 3)
+├── tools/        Agent tool implementations          (repo_search + anchors built — Phase 3)
 ├── integrations/ Figma, Playwright, axe-core clients  (not yet built — Phase 1+)
 └── evals/        AI evaluation harness                (not yet built — Phase 8)
 ```
@@ -65,7 +65,7 @@ straightforward query patterns, SQLAlchemy sessions used directly from
 `services/` are simpler to read and debug. We'll introduce a repository
 layer only if query logic starts duplicating across services.
 
-## Runtime multi-agent workflow (all four inspection agents + findings aggregation built)
+## Runtime multi-agent workflow (inspection agents + aggregation + Code Analysis built)
 
 Design Drift's own agents (distinct from the Claude Code agents used to
 *build* this repo — see `.claude/agents/`) are implemented as LangGraph
@@ -73,26 +73,53 @@ nodes operating on one shared, structured state object — not by passing
 free-form natural-language messages between agents.
 
 The Supervisor, all four inspection agents (Design Analysis, Production
-Analysis, Visual Comparison, Accessibility), and the findings aggregation
-are wired up so far (`app/graph/workflow.py`, `app/agents/`): `START ->
-supervisor -> (design_analysis -> supervisor)* -> (production_analysis ->
-supervisor)* -> (visual_comparison -> supervisor)* -> (accessibility ->
-supervisor)* -> (aggregate_findings -> supervisor)* -> END`, all exposed
+Analysis, Visual Comparison, Accessibility), the findings aggregation, and
+the Code Analysis Agent are wired up so far (`app/graph/workflow.py`,
+`app/agents/`): `START -> supervisor -> (design_analysis -> supervisor)*
+-> (production_analysis -> supervisor)* -> (visual_comparison ->
+supervisor)* -> (accessibility -> supervisor)* -> (aggregate_findings ->
+supervisor)* -> (code_analysis -> supervisor)? -> END`, all exposed
 together via one `POST /api/v1/projects/{project_id}/design-analysis`
 call.
 
-That covers everything in the target flow below up to `aggregate
-findings`. What remains is a different kind of work — deciding what to do
-about findings (Code Analysis, Fix Agent, Verification, human-in-the-loop)
-rather than gathering more of them.
+Note the `?`: every node before Code Analysis always runs, but Code
+Analysis is `route: problems found?` — a real fork, taken only when the
+aggregation found problems *and* the project has a source checkout
+configured (`Project.source_path`). A project without one still gets every
+inspection agent and simply ends after aggregation.
+
+That covers the target flow below through `code analysis`. What remains —
+Fix Agent, Verification, human-in-the-loop — is the part that proposes and
+validates changes rather than diagnosing them.
 
 Caveats against the target table below:
 
-- **The `route: problems found?` fork isn't wired yet.** The data it will
-  branch on (`aggregated_findings.problems_found`) is computed and
-  persisted now, but both branches would currently land on END, since the
-  Code Analysis Agent the "yes" branch leads to doesn't exist. The fork
-  lands when there's somewhere different to fork to.
+- **Code Analysis retrieves before it reasons.** Deterministic anchors
+  (ids, class names, accessible names, visible text) come out of what the
+  inspection agents observed — mostly axe-core's per-violation DOM
+  evidence — via `app/tools/anchors.py`; a content search over the
+  checkout ranks files by how much of that evidence they contain and
+  returns snippets with real line numbers; only then does the LLM pick the
+  location. Output is one file/line range per finding with quoted
+  evidence, or an explicit `no_match`.
+- **It is not a tool-use loop.** The model sees the candidates the search
+  chose and cannot request more files. That keeps every node on the same
+  single structured call, and keeps the set of files that can reach an LLM
+  API decided by our code rather than by the model — which matters when
+  those files come from a user-configured path. A real
+  search→read→refine loop would locate more, and is the next step up.
+- **Anchor quality is uneven, by design.** Accessibility findings carry a
+  hard link to real DOM, so their anchors are strong. Visual findings are
+  prose about two images, so they only yield quoted literals plus the
+  project's target selector, and legitimately return `no_match` when they
+  quote nothing. The fix is for Production Analysis to extract the DOM
+  alongside its screenshot (still not built); tokenizing prose into
+  keywords instead would manufacture confident-looking noise.
+- **Source checkouts are confined.** `Project.source_path` resolves
+  *relative to* `Settings.source_root` and is rejected if it escapes it
+  (`..`, absolute paths, or symlinks pointing out). These files get sent to
+  a third-party LLM API, so an unconstrained path would turn a project
+  field into arbitrary file read plus exfiltration.
 - **Production Analysis** covers only the "screenshot" half of its planned
   tool set — no DOM/computed-style extraction yet.
 - **Visual Comparison** here doesn't fold accessibility context into its
@@ -117,7 +144,7 @@ START
   → compare                  (Visual Comparison Agent)
   → accessibility analysis   (Accessibility Agent)
   → aggregate findings       (deterministic — merge/triage, no LLM)
-  → route: problems found?
+  → route: problems found?   (also skipped when no source checkout is set)
       no  → finalize report → END
       yes → code analysis    (Code Analysis Agent)
           → propose fix      (Fix Agent)
@@ -140,7 +167,7 @@ read/write:
 | Production Analysis | Inspect the real app | Playwright (screenshots ✅, DOM/computed styles not yet built) |
 | Visual Comparison | Expected vs. actual → structured drift findings | image diffing ✅, multimodal LLM ✅ |
 | Accessibility | Deterministic a11y violations + AI interpretation | axe-core ✅, LLM (interpretation only) ✅ |
-| Code Analysis | Map findings to likely source files | repo search/grep, LLM |
+| Code Analysis | Map findings to exact source locations | repo content search ✅, LLM ✅ |
 | Fix Agent | Propose a code patch (never applies/publishes) | LLM structured output |
 | Verification | Re-run checks after a fix, before/after compare | Playwright, axe-core, image diffing |
 
@@ -172,6 +199,24 @@ agent progress from FastAPI to the frontend. We're not using WebSockets —
 progress only flows server → client, so SSE is the simpler, sufficient
 choice; this is revisited only if the frontend genuinely needs to push data
 back mid-stream.
+
+## Source-code access
+
+The Code Analysis Agent (and later the Fix Agent) needs the target app's
+source. Two constraints on that, both enforced in
+`app/tools/repo_search.py`:
+
+- **Confined.** `Project.source_path` is resolved relative to
+  `Settings.source_root` and rejected if it escapes — absolute paths, `..`
+  segments, and symlinks pointing outside all fail. File contents reach a
+  third-party LLM API, so an unconstrained path would be an arbitrary-read
+  and exfiltration primitive.
+- **Read-only, and allowlisted.** Nothing writes to a checkout. Only known
+  UI source extensions are read, which fails closed: `.env`, private
+  keys, and anything else unanticipated are excluded by never being
+  included, rather than by someone remembering to name them. Oversized
+  and non-UTF-8 files are skipped too — a committed bundle is never where
+  a human fixes a design bug, and it would swamp any prompt it reached.
 
 ## Human-in-the-loop (not yet built)
 

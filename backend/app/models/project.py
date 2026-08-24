@@ -28,6 +28,11 @@ class Project(Base):
     # Optional: if unset, a scan screenshots the full page instead — fine
     # for a whole-page Figma frame, less meaningful for a single component.
     target_selector: Mapped[str | None] = mapped_column(nullable=True)
+    # Where this app's source lives, *relative to* Settings.source_root —
+    # deliberately not an absolute path (see that setting on why). Optional:
+    # without it the Design QA workflow still runs every inspection agent,
+    # it just can't map findings onto files (see app.agents.code_analysis).
+    source_path: Mapped[str | None] = mapped_column(nullable=True)
 
     # Raw-ish node data from the Figma API (name, styles, layout, hierarchy),
     # serialized from app.integrations.figma.types.FigmaNode.

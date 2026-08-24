@@ -5,11 +5,12 @@ message-passing between agents (docs/principles.md #4).
 
 Grows one node's worth of fields at a time as each vertical slice lands
 (docs/principles.md #1): Design Analysis, Production Analysis, Visual
-Comparison, Accessibility, now the findings aggregation. Later agents add
-their own fields the same way rather than this being speculatively modeled
-up front.
+Comparison, Accessibility, the findings aggregation, now Code Analysis.
+Later agents add their own fields the same way rather than this being
+speculatively modeled up front.
 """
 
+from pathlib import Path
 from typing import Any
 from uuid import UUID
 
@@ -18,6 +19,7 @@ from pydantic import BaseModel
 from app.agents.types import (
     AccessibilityInterpretation,
     AggregatedFindings,
+    CodeAnalysisResult,
     DesignAnalysisResult,
 )
 from app.integrations.axe.types import AccessibilityReport
@@ -65,6 +67,15 @@ class DesignQAState(BaseModel):
     # problems_found flag docs/architecture.md's flow branches on — see
     # app.agents.aggregate_findings.
     aggregated_findings: AggregatedFindings | None = None
+
+    # --- Code Analysis Agent's input/output ---
+    # Resolved and containment-checked by the service before the graph runs
+    # (see app.tools.repo_search.resolve_source_root), so nodes never
+    # resolve a user-supplied path themselves. None when the project has no
+    # source checkout configured — in which case the Supervisor skips Code
+    # Analysis rather than failing the run.
+    source_root: Path | None = None
+    code_analysis: CodeAnalysisResult | None = None
 
     # Set by the Supervisor when it decides the workflow can't proceed
     # (e.g. no usable Figma data) — distinct from a node's own tool/LLM

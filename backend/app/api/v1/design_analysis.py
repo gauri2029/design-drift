@@ -14,6 +14,7 @@ from app.schemas.design_analysis import DesignAnalysisRead
 from app.services import design_analysis as design_analysis_service
 from app.services import projects as projects_service
 from app.services.design_analysis import ProjectNotAnalyzableError
+from app.tools.repo_search import SourceNotAccessibleError
 
 router = APIRouter(prefix="/projects/{project_id}/design-analysis", tags=["design-analysis"])
 
@@ -35,6 +36,11 @@ async def create_design_analysis(
     try:
         analysis = await design_analysis_service.create_design_analysis(db, project, storage)
     except ProjectNotAnalyzableError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except SourceNotAccessibleError as exc:
+        # 409, not 502: the project's own source_path is misconfigured —
+        # a state-of-this-resource problem the user can fix, not an
+        # upstream service failing.
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except LLMNotConfiguredError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc

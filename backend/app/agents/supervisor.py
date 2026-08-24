@@ -2,20 +2,22 @@
 docs/architecture.md's runtime-agent table — "owns workflow state, routes
 between agents; no tools of its own").
 
-Routing is a simple "what hasn't run yet" check over state, in the same
+Routing is mostly a "what hasn't run yet" check over state, in the same
 order nodes appear in docs/architecture.md's flow: Design Analysis,
-Production Analysis, Visual Comparison, Accessibility, then the findings
-aggregation. Adding a later agent (Code Analysis, ...) means adding one
-more `if state.<its output> is None: return NODE_<it>` line here and to
-the graph's path_map in app.graph.workflow — each new agent doesn't need
-to decide for itself whether it should run.
+Production Analysis, Visual Comparison, Accessibility, the findings
+aggregation, then Code Analysis. Adding a later agent (Fix Agent, ...)
+means adding one more branch here and to the graph's path_map in
+app.graph.workflow — each new agent doesn't need to decide for itself
+whether it should run.
 
-Note what this deliberately does *not* do yet: docs/architecture.md's
-flow forks on `route: problems found?` after aggregation, but both
-branches would currently land on END, since the Code Analysis Agent the
-"yes" branch leads to doesn't exist. The data that fork will read
-(`aggregated_findings.problems_found`) is computed and persisted now; the
-fork itself lands when there's somewhere different to fork to.
+Code Analysis is the first node that is *not* unconditional — it's
+docs/architecture.md's `route: problems found?` fork, and it's a real
+fork now that there's somewhere other than END to go. Two things have to
+hold for it to run: the aggregation found problems (nothing to locate
+otherwise), and the project has a usable source checkout. A project
+without one still gets the four inspection agents and simply ends after
+aggregation, rather than the run failing — configuring a checkout is
+optional (see Project.source_path).
 """
 
 from typing import Any
@@ -27,6 +29,7 @@ NODE_PRODUCTION_ANALYSIS = "production_analysis"
 NODE_VISUAL_COMPARISON = "visual_comparison"
 NODE_ACCESSIBILITY = "accessibility"
 NODE_AGGREGATE_FINDINGS = "aggregate_findings"
+NODE_CODE_ANALYSIS = "code_analysis"
 NODE_END = "end"
 
 
@@ -49,4 +52,17 @@ def route_after_supervisor(state: DesignQAState) -> str:
         return NODE_ACCESSIBILITY
     if state.aggregated_findings is None:
         return NODE_AGGREGATE_FINDINGS
+    if _should_run_code_analysis(state):
+        return NODE_CODE_ANALYSIS
     return NODE_END
+
+
+def _should_run_code_analysis(state: DesignQAState) -> bool:
+    if state.code_analysis is not None:
+        return False  # already ran
+    if state.source_root is None:
+        return False  # project has no source checkout to search
+    # `problems_found` is the fork docs/architecture.md calls
+    # `route: problems found?` — with nothing found, there's nothing to
+    # locate in the code, so the run ends here.
+    return bool(state.aggregated_findings and state.aggregated_findings.problems_found)

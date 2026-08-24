@@ -38,3 +38,6 @@ samples/**/*.png
 
 # --- Docker ---
 *.pid
+
+# Local checkouts of target apps the Code Analysis Agent reads (symlinks).
+sources/

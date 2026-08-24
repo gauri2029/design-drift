@@ -158,3 +158,75 @@ class AggregatedFindings(BaseModel):
     problems_found: bool
     # Ordered highest-priority first; ties keep each agent's own ordering.
     findings: list[AggregatedFinding] = []
+
+
+class LocationConfidence(StrEnum):
+    HIGH = "high"
+    MEDIUM = "medium"
+    LOW = "low"
+
+
+class SourceLocation(BaseModel):
+    file_path: str = Field(
+        description=(
+            "The path, copied exactly from one of the candidates you were shown. Never invent "
+            "a path, and never name a file that wasn't among the candidates."
+        )
+    )
+    line_start: int = Field(
+        description=(
+            "First line of the responsible code. Use the line numbers shown in the snippet — "
+            "they are the real line numbers in that file."
+        )
+    )
+    line_end: int = Field(
+        description="Last line of the responsible code. Same as line_start for a single line."
+    )
+    code_evidence: str = Field(
+        description=(
+            "The exact lines from the snippet that justify this location, copied verbatim. "
+            "This is what a human will check first, so it must actually appear in the snippet."
+        )
+    )
+
+
+class FindingLocation(BaseModel):
+    finding_title: str = Field(
+        description="The finding's title, copied exactly from the findings list you were given."
+    )
+    no_match: bool = Field(
+        description=(
+            "True when the candidates don't contain convincing evidence for this finding. "
+            "Saying so is a correct, useful answer — much better than pointing a developer at "
+            "a location you don't actually believe in."
+        )
+    )
+    location: SourceLocation | None = Field(
+        default=None,
+        description="The single most likely location. Must be null when no_match is true.",
+    )
+    explanation: str = Field(
+        description=(
+            "Why this location causes the finding — or, when no_match is true, what was "
+            "missing from the evidence."
+        )
+    )
+    confidence: LocationConfidence = Field(
+        description=(
+            "How confident you are in this location. Reserve 'high' for when the snippet "
+            "directly shows the responsible markup or style rule."
+        )
+    )
+
+
+class CodeAnalysisResult(BaseModel):
+    summary: str = Field(
+        description=(
+            "One short paragraph on how well these findings map onto the codebase overall, "
+            "including anything that made the mapping hard."
+        )
+    )
+    locations: list[FindingLocation] = Field(
+        default_factory=list,
+        description="One entry per finding you were given, in the same order.",
+    )

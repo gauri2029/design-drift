@@ -14,6 +14,10 @@ class ProjectCreate(BaseModel):
     # CSS selector on target_url matching the Figma node, e.g. "#hero-cta".
     # Unset means a scan screenshots the full page instead of one element.
     target_selector: str | None = None
+    # Path to this app's source checkout, relative to Settings.source_root
+    # (e.g. "acme-marketing-site"). Absolute paths and anything escaping
+    # that root are rejected — see app.tools.repo_search.resolve_source_root.
+    source_path: str | None = None
 
 
 class ProjectRead(BaseModel):
@@ -25,6 +29,7 @@ class ProjectRead(BaseModel):
     figma_node_id: str
     target_url: str
     target_selector: str | None = None
+    source_path: str | None = None
 
     figma_data: FigmaNode | None = None
     figma_screenshot_key: str | None = None
