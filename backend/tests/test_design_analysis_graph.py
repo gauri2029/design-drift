@@ -15,6 +15,7 @@ import respx
 from httpx import Response
 from PIL import Image
 
+from app.agents.production_analysis import FALLBACK_VIEWPORT
 from app.agents.supervisor import (
     NODE_ACCESSIBILITY,
     NODE_AGGREGATE_FINDINGS,
@@ -449,3 +450,59 @@ async def test_run_design_qa_skips_code_analysis_without_a_source_checkout(
     assert final_state.aggregated_findings is not None
     assert final_state.aggregated_findings.problems_found is True
     assert final_state.code_analysis is None
+
+
+@respx.mock
+async def test_production_capture_uses_the_figma_frame_width(monkeypatch, fixture_server) -> None:
+    """The capture exists to be diffed against the Figma render, so a
+    width mismatch here invents layout drift the target app never had —
+    and the Visual Comparison Agent then reports it as a real finding.
+    """
+    monkeypatch.setattr(get_settings(), "anthropic_api_key", "test-key")
+    mock_anthropic_by_agent(
+        {
+            "design_analysis": ANALYSIS_RESULT,
+            "visual_comparison": VISUAL_COMPARISON_RESULT,
+            "accessibility": ACCESSIBILITY_INTERPRETATION,
+        }
+    )
+
+    figma_width = 1400  # deliberately not the old hard-coded 1280
+    host, port = fixture_server.server_address[:2]
+    state = _state(target_url=f"http://{host}:{port}/match_figma_fixture.html")
+    state.figma_node = {
+        **FIGMA_NODE,
+        "absolute_bounding_box": {"x": 0, "y": 0, "width": figma_width, "height": 6599},
+    }
+
+    final_state = await run_design_qa(state)
+
+    assert final_state.production_screenshot is not None
+    captured = Image.open(BytesIO(final_state.production_screenshot))
+    assert captured.width == figma_width
+
+
+@respx.mock
+async def test_production_capture_falls_back_when_figma_records_no_width(
+    monkeypatch, fixture_server
+) -> None:
+    # A missing width shouldn't abort the whole run: the accessibility
+    # scan and every other downstream finding are still worth having.
+    monkeypatch.setattr(get_settings(), "anthropic_api_key", "test-key")
+    mock_anthropic_by_agent(
+        {
+            "design_analysis": ANALYSIS_RESULT,
+            "visual_comparison": VISUAL_COMPARISON_RESULT,
+            "accessibility": ACCESSIBILITY_INTERPRETATION,
+        }
+    )
+
+    host, port = fixture_server.server_address[:2]
+    state = _state(target_url=f"http://{host}:{port}/match_figma_fixture.html")
+    state.figma_node = {"name": "Hero", "type": "FRAME"}  # no bounding box
+
+    final_state = await run_design_qa(state)
+
+    assert final_state.production_screenshot is not None
+    captured = Image.open(BytesIO(final_state.production_screenshot))
+    assert captured.width == FALLBACK_VIEWPORT.width

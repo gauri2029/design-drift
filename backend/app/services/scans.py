@@ -8,7 +8,6 @@ is a later phase; this is the deterministic capture-and-diff step it will
 eventually call as a tool.
 """
 
-from typing import Any
 from uuid import UUID, uuid4
 
 from sqlalchemy import select
@@ -18,9 +17,9 @@ from app.integrations.axe.scan import run_accessibility_scan
 from app.integrations.imaging.compare import compare_images
 from app.integrations.playwright.breakpoints import (
     MATCH_FIGMA_BREAKPOINT,
-    MATCH_FIGMA_VIEWPORT_HEIGHT,
     STANDARD_BREAKPOINTS,
     Viewport,
+    match_figma_viewport,
 )
 from app.integrations.playwright.capture import capture_screenshot
 from app.integrations.storage.base import StorageBackend
@@ -130,25 +129,14 @@ def _resolve_viewport(payload: ScanCreate, project: Project) -> Viewport:
 
 
 def _match_figma_viewport(project: Project) -> Viewport:
-    """Width tracks the Figma node's own recorded width, not a fixed
-    preset (see MATCH_FIGMA_BREAKPOINT's docstring). Height is just a
-    normal browser viewport height — the full-page capture in
-    capture_screenshot is what captures the page's real height, not this
-    viewport, so it deliberately doesn't try to match the Figma frame's
-    height too.
+    """Scan-specific wrapper: a scan that explicitly asked for match_figma
+    can't fall back to a default width, so a node with no recorded width
+    is an error here rather than something to shrug off (contrast
+    app.agents.production_analysis, which still wants a capture).
     """
-    # project.figma_data is stored via FigmaNode.model_dump(mode="json")
-    # with no by_alias=True (see app.services.projects), so the keys here
-    # are the model's plain field names (snake_case), not the camelCase
-    # aliases the API re-applies on the way out in ProjectRead responses.
-    node: dict[str, Any] = project.figma_data or {}
-    bounding_box: dict[str, Any] | None = node.get("absolute_bounding_box")
-    width = bounding_box.get("width") if bounding_box else None
-    if width is None:
+    viewport = match_figma_viewport(project.figma_data or {})
+    if viewport is None:
         raise ScanTargetNotReadyError(
             "project's Figma node has no recorded width; can't use match_figma"
         )
-    # Figma returns width as a float. round() (not int(), which always
-    # truncates toward zero) so we don't silently shave off a fractional
-    # pixel of the intended width.
-    return Viewport(round(width), MATCH_FIGMA_VIEWPORT_HEIGHT)
+    return viewport

@@ -130,7 +130,11 @@ Caveats against the target table below:
   a third-party LLM API, so an unconstrained path would turn a project
   field into arbitrary file read plus exfiltration.
 - **Production Analysis** covers only the "screenshot" half of its planned
-  tool set — no DOM/computed-style extraction yet.
+  tool set — no DOM/computed-style extraction yet. It captures at the
+  Figma frame's own width (`match_figma_viewport`, shared with scans),
+  falling back to 1280x800 only when the node records no width: this
+  capture exists to be diffed against that render, so a width mismatch
+  would manufacture layout drift the target app never had.
 - **Visual Comparison** here doesn't fold accessibility context into its
   own judgment the way `app/services/reviews.py`'s older, Scan-scoped
   version does; Accessibility runs as its own separate node/judgment
