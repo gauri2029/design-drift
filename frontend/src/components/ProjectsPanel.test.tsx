@@ -10,6 +10,7 @@ const CREATED_PROJECT: Project = {
   figma_node_id: '1:23',
   target_url: 'https://example.com',
   target_selector: null,
+  source_path: null,
   figma_data: {
     id: '1:23',
     name: 'Button',

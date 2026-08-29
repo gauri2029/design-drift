@@ -162,3 +162,65 @@ def test_match_case_sensitivity_depends_on_kind(
     value = "btn-primary" if kind is AnchorKind.CLASS else "Get Started"
 
     assert Anchor(kind=kind, value=value).matches(line) is expected
+
+
+def test_falls_back_to_a_tag_anchor_for_document_level_rules() -> None:
+    # axe targets the bare <html> element for rules like html-has-lang.
+    # Without this, such findings have no anchor at all and can only ever
+    # come back no_match — even though the answer is line 2 of the markup.
+    anchors = extract_anchors(accessibility_report=_report(target=["html"]))
+
+    assert [(a.kind, a.value) for a in anchors] == [(AnchorKind.TAG, "html")]
+
+
+def test_ignores_bare_tags_that_identify_nothing() -> None:
+    # "div" appears everywhere; anchoring on it would rank noise.
+    assert extract_anchors(accessibility_report=_report(target=["div"])) == []
+
+
+def test_tag_anchor_matches_markup_not_prose() -> None:
+    tag = Anchor(kind=AnchorKind.TAG, value="html")
+
+    assert tag.matches("<html lang='en'>") is True
+    assert tag.matches("  <HTML>") is True
+    # The word in a comment or a filename must not count as the element.
+    assert tag.matches("// see index.html for details") is False
+
+
+def test_strips_decoration_from_quoted_labels() -> None:
+    # The model transcribes a rendered label including a CSS arrow; only
+    # the word itself is in the markup.
+    anchors = extract_anchors(texts=["The button reads 'Links ->' instead of 'Register ->'."])
+
+    assert _values(anchors, AnchorKind.TEXT) == {"Links", "Register"}
+
+
+def test_extracts_unquoted_title_case_section_names() -> None:
+    # Findings name sections without quoting them, and the name appears
+    # verbatim in markup.
+    anchors = extract_anchors(
+        texts=["The Schedule of Events list shows only 5 items instead of 7."]
+    )
+
+    assert _values(anchors, AnchorKind.PHRASE) == {"Schedule of Events"}
+
+
+def test_phrase_extraction_drops_a_leading_article() -> None:
+    # "The" here is sentence grammar, not part of the section's name.
+    anchors = extract_anchors(texts=["The Register Now block is missing."])
+
+    assert _values(anchors, AnchorKind.PHRASE) == {"Register Now"}
+
+
+def test_a_single_capitalized_word_is_not_a_phrase() -> None:
+    # One capitalized word is just a word — usually the sentence's first.
+    assert extract_anchors(texts=["Production renders this differently."]) == []
+
+
+def test_phrase_anchors_rank_below_quoted_literals() -> None:
+    # A quoted string was reported verbatim; a title-case run was inferred
+    # from prose, so it should carry less ranking weight.
+    quoted = Anchor(kind=AnchorKind.TEXT, value="Get started")
+    phrase = Anchor(kind=AnchorKind.PHRASE, value="Schedule of Events")
+
+    assert quoted.weight > phrase.weight

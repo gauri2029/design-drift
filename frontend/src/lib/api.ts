@@ -45,6 +45,7 @@ export interface Project {
   figma_node_id: string
   target_url: string
   target_selector: string | null
+  source_path: string | null
   figma_data: FigmaNode | null
   figma_screenshot_key: string | null
   figma_fetched_at: string | null
@@ -58,6 +59,7 @@ export interface ProjectCreateInput {
   figma_node_id: string
   target_url: string
   target_selector?: string
+  source_path?: string
 }
 
 export async function fetchProjects(): Promise<Project[]> {
@@ -266,4 +268,129 @@ export async function createReview(projectId: string, scanId: string): Promise<R
 
 export function scanDiffUrl(projectId: string, scanId: string): string {
   return `${API_BASE_URL}/api/v1/projects/${projectId}/scans/${scanId}/diff`
+}
+
+// --- Design QA workflow (LangGraph) --------------------------------------
+//
+// Mirrors app/schemas/design_analysis.py:DesignAnalysisRead — one run of the
+// multi-agent graph (app/graph/workflow.py). Project-scoped, not
+// scan-scoped: the graph does its own production capture rather than
+// reusing a Scan, so this lives alongside Scan rather than inside it.
+
+// Mirrors app/agents/types.py:DesignAnalysisResult — the Figma side alone.
+export interface DesignComponent {
+  name: string
+  role: string
+  notable_styling: string
+}
+
+export interface DesignAnalysisResult {
+  layout_summary: string
+  design_intent: string
+  key_components: DesignComponent[]
+  implementation_risks: string[]
+}
+
+export type AccessibilityPriority = 'high' | 'medium' | 'low'
+
+export interface AccessibilityIssue {
+  violation_id: string
+  user_impact: string
+  priority: AccessibilityPriority
+}
+
+export interface AccessibilityInterpretation {
+  summary: string
+  most_important_issues: AccessibilityIssue[]
+}
+
+// Every agent's findings merged onto one scale — see
+// app/agents/aggregate_findings.py. `original_severity` keeps the producing
+// agent's own word, since normalizing onto `priority` is lossy.
+export type FindingSource = 'visual_comparison' | 'accessibility'
+export type FindingPriority = 'high' | 'medium' | 'low'
+
+export interface AggregatedFinding {
+  source: FindingSource
+  priority: FindingPriority
+  original_severity: string
+  title: string
+  detail: string
+  likely_area: string | null
+}
+
+export interface AggregatedFindings {
+  problems_found: boolean
+  findings: AggregatedFinding[]
+}
+
+export type LocationConfidence = 'high' | 'medium' | 'low'
+
+export interface SourceLocation {
+  file_path: string
+  line_start: number
+  line_end: number
+  code_evidence: string
+}
+
+export interface FindingLocation {
+  finding_title: string
+  no_match: boolean
+  location: SourceLocation | null
+  explanation: string
+  confidence: LocationConfidence
+}
+
+export interface CodeAnalysisResult {
+  summary: string
+  locations: FindingLocation[]
+}
+
+export interface DesignAnalysis {
+  id: string
+  project_id: string
+  model: string
+  result: DesignAnalysisResult
+  production_screenshot_key: string | null
+  comparison_result: ComparisonResult | null
+  diff_image_key: string | null
+  visual_comparison: VisualReviewResult | null
+  accessibility_report: AccessibilityReport | null
+  accessibility_interpretation: AccessibilityInterpretation | null
+  aggregated_findings: AggregatedFindings | null
+  // Null when the workflow's `problems found?` fork skipped Code Analysis —
+  // no problems, or the project has no source checkout configured.
+  code_analysis: CodeAnalysisResult | null
+  created_at: string
+}
+
+export async function fetchDesignAnalyses(projectId: string): Promise<DesignAnalysis[]> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/projects/${projectId}/design-analysis`)
+
+  if (!response.ok) {
+    throw new Error(`Failed to list design analyses (${response.status})`)
+  }
+
+  return (await response.json()) as DesignAnalysis[]
+}
+
+export async function createDesignAnalysis(projectId: string): Promise<DesignAnalysis> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/projects/${projectId}/design-analysis`, {
+    method: 'POST',
+  })
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { detail?: string } | null
+    throw new Error(body?.detail ?? `Failed to run the Design QA workflow (${response.status})`)
+  }
+
+  return (await response.json()) as DesignAnalysis
+}
+
+export function designAnalysisProductionUrl(projectId: string, analysisId: string): string {
+  return `${API_BASE_URL}/api/v1/projects/${projectId}/design-analysis/${analysisId}/production`
+}
+
+export function designAnalysisDiffUrl(projectId: string, analysisId: string): string {
+  return `${API_BASE_URL}/api/v1/projects/${projectId}/design-analysis/${analysisId}/diff`
 }

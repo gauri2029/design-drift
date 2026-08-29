@@ -15,6 +15,8 @@ from app.tools.repo_search import (
     MAX_FILE_BYTES,
     MAX_FILES,
     MAX_LINE_CHARS,
+    SNIPPET_LINES_AFTER,
+    SNIPPET_LINES_BEFORE,
     SourceNotAccessibleError,
     list_source_files,
     load_source_corpus,
@@ -302,3 +304,38 @@ def test_snippet_truncates_very_long_lines(tmp_path: Path) -> None:
 
     # Minified/generated lines get cut rather than swallowing the prompt.
     assert len(max(match.snippet.splitlines(), key=len)) < MAX_LINE_CHARS + 20
+
+
+def test_snippet_reaches_further_below_the_match_than_above(tmp_path: Path) -> None:
+    """Markup nests downward, so a section's content is below its heading.
+
+    A symmetric window centred on a heading shows the heading and the prose
+    above it, and stops just before the list a finding is actually asking
+    about — which reads to the model as "I can see the header but not the
+    items", and comes back no_match.
+    """
+    root = tmp_path / "app"
+    heading_line = 60
+    lines = ["<div>filler</div>"] * (heading_line - 1)
+    lines.append('<div class="title">Schedule of Events</div>')
+    lines += ["<div>item</div>"] * 80
+    _write(root / "index.html", "\n".join(lines))
+
+    match = search_corpus(
+        load_source_corpus(root), [_anchor(AnchorKind.PHRASE, "Schedule of Events")]
+    )[0]
+
+    assert match.line_start == heading_line - SNIPPET_LINES_BEFORE
+    assert match.line_end == heading_line + SNIPPET_LINES_AFTER
+    assert SNIPPET_LINES_AFTER > SNIPPET_LINES_BEFORE
+
+
+def test_snippet_is_clamped_to_the_files_bounds(tmp_path: Path) -> None:
+    # A match near the top must not produce a line 0 or a negative start.
+    root = tmp_path / "app"
+    _write(root / "index.html", "\n".join(["<html>", "<body>", "</body>", "</html>"]))
+
+    match = search_corpus(load_source_corpus(root), [_anchor(AnchorKind.TAG, "html")])[0]
+
+    assert match.line_start == 1
+    assert match.line_end == 4

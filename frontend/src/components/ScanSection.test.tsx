@@ -10,6 +10,7 @@ const PROJECT: Project = {
   figma_node_id: '1:23',
   target_url: 'https://example.com',
   target_selector: '#hero-cta',
+  source_path: null,
   figma_data: null,
   figma_screenshot_key: 'figma/proj-1/preview.png',
   figma_fetched_at: '2026-01-01T00:00:00Z',

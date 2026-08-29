@@ -1,4 +1,5 @@
 import { useProjects } from '../hooks/useProjects'
+import { DesignQAPanel } from './DesignQAPanel'
 import { FigmaPreview } from './FigmaPreview'
 import { ProjectForm } from './ProjectForm'
 import { ProjectList } from './ProjectList'
@@ -47,7 +48,12 @@ export function ProjectsPanel() {
       {/* key forces a remount on project switch, so useScans' own initial
           state naturally resets instead of the hook resetting `status`
           itself inside an effect. */}
-      {selectedProject && <ScanSection key={selectedProject.id} project={selectedProject} />}
+      {selectedProject && (
+        <>
+          <DesignQAPanel key={`qa-${selectedProject.id}`} project={selectedProject} />
+          <ScanSection key={selectedProject.id} project={selectedProject} />
+        </>
+      )}
     </div>
   )
 }

@@ -12,6 +12,7 @@ const emptyForm: ProjectCreateInput = {
   figma_node_id: '',
   target_url: '',
   target_selector: '',
+  source_path: '',
 }
 
 export function ProjectForm({ onCreate, submitting }: ProjectFormProps) {
@@ -27,8 +28,14 @@ export function ProjectForm({ onCreate, submitting }: ProjectFormProps) {
     event.preventDefault()
     setFormError(null)
     try {
-      const trimmedSelector = form.target_selector?.trim()
-      await onCreate({ ...form, target_selector: trimmedSelector || undefined })
+      // Empty optional fields are omitted rather than sent as "": the
+      // backend treats null as "not configured", and "" would resolve to
+      // the source root itself.
+      await onCreate({
+        ...form,
+        target_selector: form.target_selector?.trim() || undefined,
+        source_path: form.source_path?.trim() || undefined,
+      })
       setForm(emptyForm)
     } catch (err) {
       setFormError(err instanceof Error ? err.message : 'Failed to create project')
@@ -76,6 +83,14 @@ export function ProjectForm({ onCreate, submitting }: ProjectFormProps) {
         placeholder="#hero-cta"
         required={false}
       />
+      <Field
+        label="Source path (optional)"
+        value={form.source_path ?? ''}
+        onChange={handleChange('source_path')}
+        placeholder="my-app"
+        required={false}
+        hint="Folder inside SOURCE_ROOT holding this app's code. Needed for code analysis."
+      />
 
       {formError && (
         <p role="alert" className="text-sm text-red-600 dark:text-red-400">
@@ -101,9 +116,18 @@ interface FieldProps {
   placeholder?: string
   type?: string
   required?: boolean
+  hint?: string
 }
 
-function Field({ label, value, onChange, placeholder, type = 'text', required = true }: FieldProps) {
+function Field({
+  label,
+  value,
+  onChange,
+  placeholder,
+  type = 'text',
+  required = true,
+  hint,
+}: FieldProps) {
   return (
     <label className="block text-sm">
       <span className="mb-1 block font-medium text-slate-700 dark:text-slate-300">{label}</span>
@@ -115,6 +139,11 @@ function Field({ label, value, onChange, placeholder, type = 'text', required = 
         required={required}
         className="w-full rounded-md border border-slate-300 px-3 py-1.5 text-slate-900 shadow-sm transition focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
       />
+      {hint && (
+        <span className="mt-1 block text-xs font-normal text-slate-500 dark:text-slate-400">
+          {hint}
+        </span>
+      )}
     </label>
   )
 }
