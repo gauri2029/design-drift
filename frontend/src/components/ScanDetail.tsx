@@ -1,5 +1,4 @@
 import { projectScreenshotUrl, scanDiffUrl, scanProductionUrl, type Project, type Scan } from '../lib/api'
-import { AgentActivityPanel } from './AgentActivityPanel'
 import { Badge, type BadgeTone } from './Badge'
 import { ReviewPanel } from './ReviewPanel'
 import { ZoomableImage } from './ZoomableImage'
@@ -75,7 +74,6 @@ export function ScanDetail({ project, scan }: ScanDetailProps) {
 
       <ReviewPanel key={scan.id} projectId={project.id} scanId={scan.id} />
 
-      <AgentActivityPanel />
     </div>
   )
 }

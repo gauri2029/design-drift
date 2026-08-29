@@ -1,8 +1,97 @@
+"""Shared test fixtures.
+
+The database redirect at the top of this module runs *before* any `app`
+import, and it has to: `app.db.session` builds its engine from
+`Settings.database_url` at import time, so pointing tests elsewhere
+afterwards would be too late.
+
+Why it exists: the API tests wipe tables between cases (`delete(Project)`
+and friends). Pointed at the developer's own database, a single `pytest`
+run silently destroys whatever projects they were working with. Tests get
+their own database instead — created and migrated on demand — so running
+them is never destructive.
+"""
+
+import os
+import re
+import subprocess
+import sys
+from pathlib import Path
+from urllib.parse import urlparse
+
+_REPO_ENV = Path(__file__).resolve().parents[2] / ".env"
+
+
+def _configured_database_url() -> str:
+    """The dev database URL, from the environment or the repo's .env."""
+    from_env = os.environ.get("DATABASE_URL")
+    if from_env:
+        return from_env
+    if _REPO_ENV.exists():
+        match = re.search(r"^DATABASE_URL=(\S+)", _REPO_ENV.read_text(), re.M)
+        if match:
+            return match.group(1)
+    return "postgresql+asyncpg://design_drift:design_drift@localhost:55432/design_drift"
+
+
+def _test_database_url(url: str) -> str:
+    base, _, name = url.rpartition("/")
+    return f"{base}/{name}_test" if not name.endswith("_test") else url
+
+
+TEST_DATABASE_URL = _test_database_url(_configured_database_url())
+# Set before importing anything under `app` — see this module's docstring.
+os.environ["DATABASE_URL"] = TEST_DATABASE_URL
+
+
+def _ensure_test_database() -> None:
+    """Create the test database if absent, then bring it to head.
+
+    Uses psycopg2-free asyncpg via a short-lived connection to the server's
+    default database, since you can't CREATE DATABASE from inside the
+    database being created.
+    """
+    import asyncio
+
+    import asyncpg
+
+    parsed = urlparse(TEST_DATABASE_URL.replace("+asyncpg", ""))
+    name = parsed.path.lstrip("/")
+
+    async def create_if_missing() -> None:
+        admin = await asyncpg.connect(
+            user=parsed.username,
+            password=parsed.password,
+            host=parsed.hostname,
+            port=parsed.port,
+            database="postgres",
+        )
+        try:
+            exists = await admin.fetchval("select 1 from pg_database where datname = $1", name)
+            if not exists:
+                await admin.execute(f'CREATE DATABASE "{name}"')
+        finally:
+            await admin.close()
+
+    asyncio.run(create_if_missing())
+
+    subprocess.run(
+        [sys.executable, "-m", "alembic", "upgrade", "head"],
+        cwd=Path(__file__).resolve().parents[1],
+        env={**os.environ, "DATABASE_URL": TEST_DATABASE_URL},
+        check=True,
+        capture_output=True,
+    )
+
+
+_ensure_test_database()
+
+# ruff: noqa: E402 -- everything below must import *after* the database
+# redirect above, since app.db.session binds its engine at import time.
 import functools
 import http.server
 import json
 import threading
-from pathlib import Path
 
 import pytest
 import respx

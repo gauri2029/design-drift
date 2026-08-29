@@ -83,11 +83,18 @@ MAX_FILES = 400
 # a design bug.
 MAX_FILE_BYTES = 256_000
 
-# How many ranked files get snippets built and handed to the model.
-MAX_CANDIDATES = 8
+# How many ranked files get snippets built and handed to the model. Kept
+# modest because the snippets below are large; the low-scoring tail of the
+# ranking rarely earns its share of the prompt.
+MAX_CANDIDATES = 5
 
-# Lines of context either side of the best-matching line in a snippet.
-SNIPPET_CONTEXT_LINES = 6
+# Context around the best-matching line. Deliberately asymmetric: markup
+# nests *downward* from an opening tag or a heading, so what a finding
+# needs is almost always below the match, not above it. A symmetric
+# window centred on a section's heading shows the heading and the text
+# before it, and stops right before the list the question was about.
+SNIPPET_LINES_BEFORE = 8
+SNIPPET_LINES_AFTER = 40
 
 # Long lines are almost always minified or generated; truncate rather than
 # let one line dominate a snippet.
@@ -242,8 +249,8 @@ def _best_region(matches: dict[int, list[int]], total_lines: int) -> tuple[int, 
     # Most anchors wins; earliest line breaks ties, so output is stable.
     best_line = min(per_line, key=lambda number: (-per_line[number], number))
     return (
-        max(1, best_line - SNIPPET_CONTEXT_LINES),
-        min(total_lines, best_line + SNIPPET_CONTEXT_LINES),
+        max(1, best_line - SNIPPET_LINES_BEFORE),
+        min(total_lines, best_line + SNIPPET_LINES_AFTER),
     )
 
 

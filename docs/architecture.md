@@ -110,11 +110,20 @@ Caveats against the target table below:
   search→read→refine loop would locate more, and is the next step up.
 - **Anchor quality is uneven, by design.** Accessibility findings carry a
   hard link to real DOM, so their anchors are strong. Visual findings are
-  prose about two images, so they only yield quoted literals plus the
-  project's target selector, and legitimately return `no_match` when they
-  quote nothing. The fix is for Production Analysis to extract the DOM
-  alongside its screenshot (still not built); tokenizing prose into
-  keywords instead would manufacture confident-looking noise.
+  prose about two images, so they yield weaker signals: quoted literals
+  (decoration stripped — a rendered "Links ->" is the word `Links` plus a
+  CSS arrow), title-case section names lifted from unquoted prose
+  ("Schedule of Events"), and the project's target selector. Those two
+  prose-derived kinds rank below DOM evidence deliberately. A finding that
+  offers none of them still returns `no_match` rather than a guess. The
+  real fix remains Production Analysis extracting the DOM alongside its
+  screenshot (still not built).
+- **Document-level rules anchor on the element itself.** `html-has-lang`
+  and the landmark rules target a bare `<html>`/`<body>`, which carries no
+  id or class. A tag anchor (weakest weight, matched as markup so prose
+  mentions of "html" don't count) points at the right file instead of
+  returning nothing — but only for structural tags, since a bare `div`
+  identifies nothing.
 - **Source checkouts are confined.** `Project.source_path` resolves
   *relative to* `Settings.source_root` and is rejected if it escapes it
   (`..`, absolute paths, or symlinks pointing out). These files get sent to
@@ -130,7 +139,9 @@ Caveats against the target table below:
   violations (nothing to interpret).
 - Both `app/services/reviews.py` (Scan-scoped) and this graph's Visual
   Comparison node (Project-scoped) exist side by side for now, rather than
-  one replacing the other.
+  one replacing the other. The frontend surfaces them separately too:
+  `DesignQAPanel` (project-level) runs this graph, while `ScanSection`
+  keeps the older per-scan diff and review.
 
 The diagram below is the target shape once the remaining agents land —
 each new one extends the Supervisor's routing rather than inventing its
