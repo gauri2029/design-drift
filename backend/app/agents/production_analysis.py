@@ -3,8 +3,16 @@ docs/architecture.md's runtime-agent table). Unlike Design Analysis, this
 is pure tool use — screenshots are deterministic (docs/principles.md #2:
 "Element geometry, CSS values, navigation, screenshots → Playwright/DOM
 APIs"), so this node never calls an LLM. Judgment about what the capture
-*means* is the Visual Comparison Agent's job (today, app.services.reviews;
-a future phase moves that into this same graph).
+*means* is the Visual Comparison Agent's job.
+
+The capture width tracks the Figma frame's own width (the same
+match_figma rule scans use — see
+app.integrations.playwright.breakpoints.match_figma_viewport). It has to:
+this capture exists purely to be diffed against that Figma render two
+nodes later, and capturing 1280px-wide production against a 1400px-wide
+design manufactures layout drift that nothing in the target app caused.
+The Visual Comparison Agent then reports that as a real finding, which is
+worse than useless — it's a confident, wrong answer.
 
 Capture failures (bad selector, page won't load) are deliberately not
 caught here — they propagate as PlaywrightCaptureError, same as
@@ -16,21 +24,23 @@ decisions (see app.agents.supervisor).
 from typing import Any
 
 from app.graph.state import DesignQAState
+from app.integrations.playwright.breakpoints import Viewport, match_figma_viewport
 from app.integrations.playwright.capture import capture_screenshot
 
-# A plain default viewport, not a Figma-matched one: this agent's job is
-# "what does production look like," independent of any particular
-# comparison viewport strategy (see app.services.scans's breakpoint/
-# match_figma options, which stay a scan-specific concern for now).
-DEFAULT_VIEWPORT_WIDTH = 1280
-DEFAULT_VIEWPORT_HEIGHT = 800
+# Used only when the Figma node records no width — rare, since Design
+# Analysis has already run by this point. A capture at a plain desktop
+# width is still worth having; refusing to capture at all would lose the
+# accessibility scan and every other downstream finding too.
+FALLBACK_VIEWPORT = Viewport(1280, 800)
 
 
 async def production_analysis_node(state: DesignQAState) -> dict[str, Any]:
+    viewport = match_figma_viewport(state.figma_node) or FALLBACK_VIEWPORT
+
     screenshot = await capture_screenshot(
         state.target_url,
         selector=state.target_selector,
-        viewport_width=DEFAULT_VIEWPORT_WIDTH,
-        viewport_height=DEFAULT_VIEWPORT_HEIGHT,
+        viewport_width=viewport.width,
+        viewport_height=viewport.height,
     )
     return {"production_screenshot": screenshot}
