@@ -9,8 +9,9 @@ actually the cause is the judgment call, and that belongs to the Code
 Analysis Agent that calls this.
 
 Read-only by construction — nothing in this module writes, moves, or
-deletes. The Fix Agent proposes patches as text for a human to apply; it
-never writes to a checkout either (docs/principles.md #5).
+deletes, and the Fix Agent that calls it only proposes patches as text.
+Writing an approved patch back is a separate, explicitly human-gated step
+in app.tools.apply_patch (docs/principles.md #5).
 """
 
 from collections import Counter

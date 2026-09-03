@@ -368,6 +368,8 @@ export interface DesignAnalysis {
   // docs/architecture.md's workflow. This is the one field on a run
   // written by a person rather than by an agent.
   fix_review: FixReview | null
+  // Null until the approved patches are written to the checkout.
+  fix_application: FixApplication | null
   created_at: string
 }
 
@@ -463,6 +465,38 @@ export async function reviewDesignAnalysisFixes(
   if (!response.ok) {
     const body = (await response.json().catch(() => null)) as { detail?: string } | null
     throw new Error(body?.detail ?? `Failed to save the review (${response.status})`)
+  }
+
+  return (await response.json()) as DesignAnalysis
+}
+
+// Mirrors app/schemas/fix_application.py. Separate from FixReview because
+// a patch can be approved and still not applied — the file may have
+// changed in between, and that's the case worth seeing.
+export interface AppliedFix {
+  finding_title: string
+  file_path: string
+  applied: boolean
+  reason: string | null
+}
+
+export interface FixApplication {
+  applied_at: string
+  fixes: AppliedFix[]
+}
+
+export async function applyDesignAnalysisFixes(
+  projectId: string,
+  analysisId: string,
+): Promise<DesignAnalysis> {
+  const response = await fetch(
+    `${API_BASE_URL}/api/v1/projects/${projectId}/design-analysis/${analysisId}/apply`,
+    { method: 'POST' },
+  )
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { detail?: string } | null
+    throw new Error(body?.detail ?? `Failed to apply the approved patches (${response.status})`)
   }
 
   return (await response.json()) as DesignAnalysis

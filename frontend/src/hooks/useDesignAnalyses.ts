@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
+  applyDesignAnalysisFixes,
   createDesignAnalysis as createDesignAnalysisRequest,
   fetchDesignAnalyses,
   reviewDesignAnalysisFixes,
@@ -16,6 +17,7 @@ interface UseDesignAnalysesResult {
   running: boolean
   runAnalysis: () => Promise<void>
   reviewFixes: (analysisId: string, decisions: FixDecisionItem[]) => Promise<void>
+  applyFixes: (analysisId: string) => Promise<void>
 }
 
 export function useDesignAnalyses(projectId: string): UseDesignAnalysesResult {
@@ -57,14 +59,24 @@ export function useDesignAnalyses(projectId: string): UseDesignAnalysesResult {
     }
   }, [projectId])
 
+  const replaceAnalysis = useCallback((updated: DesignAnalysis) => {
+    setAnalyses((current) =>
+      current.map((analysis) => (analysis.id === updated.id ? updated : analysis)),
+    )
+  }, [])
+
   const reviewFixes = useCallback(
     async (analysisId: string, decisions: FixDecisionItem[]) => {
-      const updated = await reviewDesignAnalysisFixes(projectId, analysisId, decisions)
-      setAnalyses((current) =>
-        current.map((analysis) => (analysis.id === analysisId ? updated : analysis)),
-      )
+      replaceAnalysis(await reviewDesignAnalysisFixes(projectId, analysisId, decisions))
     },
-    [projectId],
+    [projectId, replaceAnalysis],
+  )
+
+  const applyFixes = useCallback(
+    async (analysisId: string) => {
+      replaceAnalysis(await applyDesignAnalysisFixes(projectId, analysisId))
+    },
+    [projectId, replaceAnalysis],
   )
 
   return {
@@ -75,5 +87,6 @@ export function useDesignAnalyses(projectId: string): UseDesignAnalysesResult {
     running,
     runAnalysis,
     reviewFixes,
+    applyFixes,
   }
 }

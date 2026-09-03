@@ -1,5 +1,5 @@
-"""API tests for the human-review pause:
-PUT /api/v1/projects/{project_id}/design-analysis/{id}/fix-review.
+"""API tests for the human-review pause and what follows it:
+PUT .../design-analysis/{id}/fix-review and POST .../{id}/apply.
 
 Rows are seeded straight into the database rather than produced by a real
 graph run (test_design_analysis_api.py already covers that path end to
@@ -9,11 +9,13 @@ this file can state directly.
 """
 
 import uuid
+from pathlib import Path
 
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import delete
 
+from app.core.config import get_settings
 from app.db.session import async_session_factory
 from app.main import app
 from app.models.design_analysis import DesignAnalysis
@@ -39,13 +41,14 @@ def _fix(title: str, *, no_fix: bool = False, original_code_found: bool = True) 
     }
 
 
-async def _seed(fix_proposal: dict | None) -> tuple[str, str]:
+async def _seed(fix_proposal: dict | None, *, source_path: str | None = None) -> tuple[str, str]:
     project = Project(
         id=uuid.uuid4(),
         name="Marketing homepage",
         figma_file_key="abc123",
         figma_node_id="1:23",
         target_url="http://example.test/",
+        source_path=source_path,
     )
     analysis = DesignAnalysis(
         id=uuid.uuid4(),
@@ -206,3 +209,174 @@ async def test_review_rejects_an_empty_decision_list() -> None:
         response = await client.put(_url(project_id, analysis_id), json={"decisions": []})
 
     assert response.status_code == 422
+
+
+# --- applying an approved review ------------------------------------------
+#
+# Splicing is unit-tested in test_apply_patch.py; what these cover is the
+# gate around it — that a write only ever happens downstream of an
+# approval, and happens once.
+
+
+def _checkout(tmp_path: Path, monkeypatch) -> Path:
+    monkeypatch.setattr(get_settings(), "source_root", str(tmp_path / "sources"))
+    checkout = tmp_path / "sources" / "marketing-site"
+    checkout.mkdir(parents=True)
+    (checkout / "index.html").write_text(
+        '<!doctype html>\n<html lang="">\n<body>\n</body>\n', encoding="utf-8"
+    )
+    return checkout
+
+
+def _lang_fix() -> dict:
+    return {
+        "finding_title": "html-has-lang",
+        "no_fix": False,
+        "patch": {
+            "file_path": "index.html",
+            "line_start": 2,
+            "line_end": 2,
+            "original_code": '<html lang="">',
+            "replacement_code": '<html lang="en">',
+        },
+        "explanation": "Sets the document language.",
+        "confidence": "high",
+        "original_code_found": True,
+    }
+
+
+async def test_approved_patches_are_written_to_the_checkout(tmp_path, monkeypatch) -> None:
+    checkout = _checkout(tmp_path, monkeypatch)
+    project_id, analysis_id = await _seed(
+        {"summary": "One patch.", "fixes": [_lang_fix()]}, source_path="marketing-site"
+    )
+
+    async with await _client() as client:
+        await client.put(
+            _url(project_id, analysis_id),
+            json={"decisions": [{"finding_title": "html-has-lang", "decision": "approved"}]},
+        )
+        response = await client.post(
+            f"/api/v1/projects/{project_id}/design-analysis/{analysis_id}/apply"
+        )
+
+    assert response.status_code == 200, response.text
+    application = response.json()["fix_application"]
+    assert application["fixes"] == [
+        {
+            "finding_title": "html-has-lang",
+            "file_path": "index.html",
+            "applied": True,
+            "reason": None,
+        }
+    ]
+    assert '<html lang="en">' in (checkout / "index.html").read_text()
+
+
+async def test_a_rejected_patch_is_never_written(tmp_path, monkeypatch) -> None:
+    checkout = _checkout(tmp_path, monkeypatch)
+    before = (checkout / "index.html").read_text()
+    project_id, analysis_id = await _seed(
+        {"summary": "One patch.", "fixes": [_lang_fix()]}, source_path="marketing-site"
+    )
+
+    async with await _client() as client:
+        await client.put(
+            _url(project_id, analysis_id),
+            json={"decisions": [{"finding_title": "html-has-lang", "decision": "rejected"}]},
+        )
+        response = await client.post(
+            f"/api/v1/projects/{project_id}/design-analysis/{analysis_id}/apply"
+        )
+
+    assert response.status_code == 409
+    assert "approved" in response.json()["detail"]
+    assert (checkout / "index.html").read_text() == before
+
+
+async def test_applying_before_any_review_is_refused(tmp_path, monkeypatch) -> None:
+    checkout = _checkout(tmp_path, monkeypatch)
+    before = (checkout / "index.html").read_text()
+    project_id, analysis_id = await _seed(
+        {"summary": "One patch.", "fixes": [_lang_fix()]}, source_path="marketing-site"
+    )
+
+    async with await _client() as client:
+        response = await client.post(
+            f"/api/v1/projects/{project_id}/design-analysis/{analysis_id}/apply"
+        )
+
+    assert response.status_code == 409
+    assert (checkout / "index.html").read_text() == before
+
+
+async def test_applying_twice_is_refused(tmp_path, monkeypatch) -> None:
+    """The second call would act on a checkout that has already changed."""
+    _checkout(tmp_path, monkeypatch)
+    project_id, analysis_id = await _seed(
+        {"summary": "One patch.", "fixes": [_lang_fix()]}, source_path="marketing-site"
+    )
+
+    async with await _client() as client:
+        await client.put(
+            _url(project_id, analysis_id),
+            json={"decisions": [{"finding_title": "html-has-lang", "decision": "approved"}]},
+        )
+        first = await client.post(
+            f"/api/v1/projects/{project_id}/design-analysis/{analysis_id}/apply"
+        )
+        second = await client.post(
+            f"/api/v1/projects/{project_id}/design-analysis/{analysis_id}/apply"
+        )
+
+    assert first.status_code == 200
+    assert second.status_code == 409
+    assert "already been applied" in second.json()["detail"]
+
+
+async def test_a_patch_that_no_longer_fits_is_reported_not_forced(tmp_path, monkeypatch) -> None:
+    """Approval and application are separate moments, and the file is the
+    user's in between."""
+    checkout = _checkout(tmp_path, monkeypatch)
+    project_id, analysis_id = await _seed(
+        {"summary": "One patch.", "fixes": [_lang_fix()]}, source_path="marketing-site"
+    )
+
+    async with await _client() as client:
+        await client.put(
+            _url(project_id, analysis_id),
+            json={"decisions": [{"finding_title": "html-has-lang", "decision": "approved"}]},
+        )
+        # The user edits the file themselves before applying.
+        (checkout / "index.html").write_text(
+            '<!doctype html>\n<html lang="fr">\n<body>\n</body>\n', encoding="utf-8"
+        )
+        response = await client.post(
+            f"/api/v1/projects/{project_id}/design-analysis/{analysis_id}/apply"
+        )
+
+    assert response.status_code == 200
+    fix = response.json()["fix_application"]["fixes"][0]
+    assert fix["applied"] is False
+    assert "no longer in the file" in fix["reason"]
+    # Their edit survives.
+    assert '<html lang="fr">' in (checkout / "index.html").read_text()
+
+
+async def test_applying_without_a_source_checkout_is_refused(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(get_settings(), "source_root", str(tmp_path / "sources"))
+    project_id, analysis_id = await _seed(
+        {"summary": "One patch.", "fixes": [_lang_fix()]}, source_path=None
+    )
+
+    async with await _client() as client:
+        await client.put(
+            _url(project_id, analysis_id),
+            json={"decisions": [{"finding_title": "html-has-lang", "decision": "approved"}]},
+        )
+        response = await client.post(
+            f"/api/v1/projects/{project_id}/design-analysis/{analysis_id}/apply"
+        )
+
+    assert response.status_code == 409
+    assert "no source checkout" in response.json()["detail"]

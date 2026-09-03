@@ -7,6 +7,7 @@ import {
   type AggregatedFinding,
   type DesignAnalysis,
   type FindingLocation,
+  type AppliedFix,
   type FindingPriority,
   type FixDecision,
   type FixDecisionItem,
@@ -29,9 +30,8 @@ interface DesignQAPanelProps {
  * scan section rather than inside it.
  */
 export function DesignQAPanel({ project }: DesignQAPanelProps) {
-  const { latestAnalysis, status, error, running, runAnalysis, reviewFixes } = useDesignAnalyses(
-    project.id,
-  )
+  const { latestAnalysis, status, error, running, runAnalysis, reviewFixes, applyFixes } =
+    useDesignAnalyses(project.id)
   // runAnalysis rethrows (same convention as useScans/useReviews), so the
   // failure message is held here rather than in the hook.
   const [runError, setRunError] = useState<string | null>(null)
@@ -84,7 +84,12 @@ export function DesignQAPanel({ project }: DesignQAPanelProps) {
       )}
 
       {latestAnalysis && (
-        <AnalysisResult project={project} analysis={latestAnalysis} onReview={reviewFixes} />
+        <AnalysisResult
+          project={project}
+          analysis={latestAnalysis}
+          onReview={reviewFixes}
+          onApply={applyFixes}
+        />
       )}
     </section>
   )
@@ -94,10 +99,12 @@ function AnalysisResult({
   project,
   analysis,
   onReview,
+  onApply,
 }: {
   project: Project
   analysis: DesignAnalysis
   onReview: (analysisId: string, decisions: FixDecisionItem[]) => Promise<void>
+  onApply: (analysisId: string) => Promise<void>
 }) {
   return (
     <div className="space-y-5 rounded-lg border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
@@ -117,7 +124,12 @@ function AnalysisResult({
       <Section title="Proposed fixes">
         {/* Keyed on the run so a fresh run starts from its own review
             state rather than inheriting the previous run's choices. */}
-        <FixProposal key={analysis.id} analysis={analysis} onReview={onReview} />
+        <FixProposal
+          key={analysis.id}
+          analysis={analysis}
+          onReview={onReview}
+          onApply={onApply}
+        />
       </Section>
 
       <Section title="Design intent (Figma)">
@@ -259,15 +271,18 @@ function LocationItem({ location }: { location: FindingLocation }) {
 function FixProposal({
   analysis,
   onReview,
+  onApply,
 }: {
   analysis: DesignAnalysis
   onReview: (analysisId: string, decisions: FixDecisionItem[]) => Promise<void>
+  onApply: (analysisId: string) => Promise<void>
 }) {
   const review = analysis.fix_review
   const [decisions, setDecisions] = useState<Record<string, FixDecision>>(() =>
     Object.fromEntries((review?.decisions ?? []).map((item) => [item.finding_title, item.decision])),
   )
   const [saving, setSaving] = useState(false)
+  const [applying, setApplying] = useState(false)
   const [reviewError, setReviewError] = useState<string | null>(null)
 
   if (!analysis.fix_proposal) {
@@ -283,6 +298,18 @@ function FixProposal({
   // ones the agent declined are shown, but there's nothing to sign off on.
   const reviewable = fixes.filter((fix) => !fix.no_fix && fix.patch)
   const pending = reviewable.filter((fix) => !decisions[fix.finding_title])
+
+  const apply = async () => {
+    setApplying(true)
+    setReviewError(null)
+    try {
+      await onApply(analysis.id)
+    } catch (err) {
+      setReviewError(err instanceof Error ? err.message : 'Failed to apply the approved patches')
+    } finally {
+      setApplying(false)
+    }
+  }
 
   const save = async () => {
     setSaving(true)
@@ -307,8 +334,8 @@ function FixProposal({
       {/* Say plainly what approving does today. It records a decision — it
           does not touch the checkout (docs/principles.md #5). */}
       <p className="text-xs text-slate-500 dark:text-slate-500">
-        Proposals only. Approving records your sign-off; nothing is written to your files, and
-        nothing is ever committed or pushed.
+        Approve what you want, then apply. Applying edits the files in your source checkout —
+        nothing is ever staged, committed, or pushed, so your own git history is the undo.
       </p>
 
       {reviewable.length > 0 && (
@@ -318,6 +345,13 @@ function FixProposal({
           saving={saving}
           disabled={reviewable.every((fix) => !decisions[fix.finding_title])}
           onSave={() => void save()}
+          application={analysis.fix_application}
+          applying={applying}
+          canApply={
+            analysis.fix_application === null &&
+            (review?.decisions ?? []).some((item) => item.decision === 'approved')
+          }
+          onApply={() => void apply()}
         />
       )}
       {reviewError && (
@@ -332,6 +366,9 @@ function FixProposal({
             key={`${fix.finding_title}-${index}`}
             fix={fix}
             decision={decisions[fix.finding_title]}
+            applied={analysis.fix_application?.fixes.find(
+              (applied) => applied.finding_title === fix.finding_title,
+            )}
             onDecide={(decision) =>
               setDecisions((current) => ({ ...current, [fix.finding_title]: decision }))
             }
@@ -348,29 +385,57 @@ function ReviewBar({
   saving,
   disabled,
   onSave,
+  application,
+  applying,
+  canApply,
+  onApply,
 }: {
   review: DesignAnalysis['fix_review']
   pendingCount: number
   saving: boolean
   disabled: boolean
   onSave: () => void
+  application: DesignAnalysis['fix_application']
+  applying: boolean
+  canApply: boolean
+  onApply: () => void
 }) {
+  const status = application
+    ? `Applied ${new Date(application.applied_at).toLocaleString()}`
+    : review
+      ? `Reviewed ${new Date(review.reviewed_at).toLocaleString()}`
+      : 'Awaiting your review'
+
   return (
     <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 dark:border-slate-800 dark:bg-slate-950">
       <p className="text-xs text-slate-600 dark:text-slate-400">
-        {review
-          ? `Reviewed ${new Date(review.reviewed_at).toLocaleString()}`
-          : 'Awaiting your review'}
-        {pendingCount > 0 && ` · ${pendingCount} undecided`}
+        {status}
+        {!application && pendingCount > 0 && ` · ${pendingCount} undecided`}
       </p>
-      <button
-        type="button"
-        onClick={onSave}
-        disabled={saving || disabled}
-        className="rounded-md border border-slate-300 px-3 py-1 text-xs font-medium text-slate-700 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-900"
-      >
-        {saving ? 'Saving…' : review ? 'Update review' : 'Save review'}
-      </button>
+      <div className="flex items-center gap-2">
+        {!application && (
+          <button
+            type="button"
+            onClick={onSave}
+            disabled={saving || disabled}
+            className="rounded-md border border-slate-300 px-3 py-1 text-xs font-medium text-slate-700 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-900"
+          >
+            {saving ? 'Saving…' : review ? 'Update review' : 'Save review'}
+          </button>
+        )}
+        {/* Only offered once a saved review actually contains an approval —
+            applying is the one action here that changes the user's files. */}
+        {canApply && (
+          <button
+            type="button"
+            onClick={onApply}
+            disabled={applying}
+            className="rounded-md bg-emerald-600 px-3 py-1 text-xs font-medium text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {applying ? 'Applying…' : 'Apply approved fixes'}
+          </button>
+        )}
+      </div>
     </div>
   )
 }
@@ -378,10 +443,12 @@ function ReviewBar({
 function FixItem({
   fix,
   decision,
+  applied,
   onDecide,
 }: {
   fix: VerifiedFix
   decision: FixDecision | undefined
+  applied: AppliedFix | undefined
   onDecide: (decision: FixDecision) => void
 }) {
   return (
@@ -398,8 +465,14 @@ function FixItem({
         {fix.patch && !fix.original_code_found && (
           <Badge tone="danger">does not match current file</Badge>
         )}
-        {decision && (
-          <Badge tone={decision === 'approved' ? 'success' : 'neutral'}>{decision}</Badge>
+        {applied ? (
+          <Badge tone={applied.applied ? 'success' : 'danger'}>
+            {applied.applied ? 'written to file' : 'not applied'}
+          </Badge>
+        ) : (
+          decision && (
+            <Badge tone={decision === 'approved' ? 'success' : 'neutral'}>{decision}</Badge>
+          )
         )}
         <span className="font-medium text-slate-900 dark:text-slate-100">{fix.finding_title}</span>
       </div>
@@ -421,7 +494,13 @@ function FixItem({
 
       <p className="mt-1 text-slate-600 dark:text-slate-400">{fix.explanation}</p>
 
-      {!fix.no_fix && fix.patch && (
+      {applied && !applied.applied && (
+        <p className="mt-1 text-xs text-red-600 dark:text-red-400">{applied.reason}</p>
+      )}
+
+      {/* Once applied, the decision is history — re-deciding it would
+          promise something this run can no longer do. */}
+      {!applied && !fix.no_fix && fix.patch && (
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <DecisionButton
             label="Approve"

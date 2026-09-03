@@ -78,6 +78,11 @@ class DesignAnalysis(Base):
     # rather than appended to, since a reviewer changing their mind should
     # leave one current answer, not two.
     fix_review: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
+    # What was actually written to the checkout when those approvals were
+    # acted on (app.schemas.fix_application.FixApplication). Set once and
+    # never rewritten: it's a record of an edit that already happened, so a
+    # second apply would be a second event, not a correction of this one.
+    fix_application: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

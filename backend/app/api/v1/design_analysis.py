@@ -14,7 +14,11 @@ from app.schemas.design_analysis import DesignAnalysisRead
 from app.schemas.fix_review import FixReviewRequest
 from app.services import design_analysis as design_analysis_service
 from app.services import projects as projects_service
-from app.services.design_analysis import FixReviewError, ProjectNotAnalyzableError
+from app.services.design_analysis import (
+    FixApplicationError,
+    FixReviewError,
+    ProjectNotAnalyzableError,
+)
 from app.tools.repo_search import SourceNotAccessibleError
 
 router = APIRouter(prefix="/projects/{project_id}/design-analysis", tags=["design-analysis"])
@@ -120,5 +124,32 @@ async def review_design_analysis_fixes(
             db, analysis, request.decisions
         )
     except FixReviewError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    return DesignAnalysisRead.model_validate(analysis)
+
+
+@router.post("/{design_analysis_id}/apply", response_model=DesignAnalysisRead)
+async def apply_design_analysis_fixes(
+    project_id: UUID,
+    design_analysis_id: UUID,
+    db: AsyncSession = Depends(get_db),
+) -> DesignAnalysisRead:
+    """Write this run's approved patches into the project's source checkout.
+
+    POST, not PUT: applying is an event that happens once, not a value
+    being set. It writes files and nothing else — no git, ever
+    (docs/principles.md #5).
+    """
+    project = await _get_project_or_404(project_id, db)
+    analysis = await design_analysis_service.get_design_analysis(db, project_id, design_analysis_id)
+    if analysis is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="design analysis not found"
+        )
+    try:
+        analysis = await design_analysis_service.apply_fix_review(db, project, analysis)
+    except FixApplicationError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except SourceNotAccessibleError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     return DesignAnalysisRead.model_validate(analysis)
