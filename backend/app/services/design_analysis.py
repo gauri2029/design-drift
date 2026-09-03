@@ -18,6 +18,7 @@ costs real money and launches a real browser per call, so it's an
 explicit action the frontend gates behind a button.
 """
 
+from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID, uuid4
 
@@ -30,11 +31,22 @@ from app.graph.workflow import run_design_qa
 from app.integrations.storage.base import StorageBackend
 from app.models.design_analysis import DesignAnalysis
 from app.models.project import Project
+from app.schemas.fix_review import FixDecision, FixDecisionItem, FixReview
 from app.tools.repo_search import resolve_source_root
 
 
 class ProjectNotAnalyzableError(Exception):
     """Raised when a project has no usable Figma data yet to analyze."""
+
+
+class FixReviewError(Exception):
+    """Raised when a review decision doesn't fit what the run proposed.
+
+    Every case is about the state of *this* run (no proposals to review, a
+    finding it never proposed a fix for, a patch that doesn't apply), not
+    about the request being malformed — hence one exception, surfaced as a
+    409 by the router.
+    """
 
 
 async def create_design_analysis(
@@ -112,6 +124,68 @@ async def create_design_analysis(
     await db.commit()
     await db.refresh(design_analysis)
     return design_analysis
+
+
+async def review_fix_proposal(
+    db: AsyncSession, analysis: DesignAnalysis, decisions: list[FixDecisionItem]
+) -> DesignAnalysis:
+    """Record a human's approve/reject decision on the proposed patches.
+
+    This is the pause in docs/architecture.md's flow. It only *records* the
+    decision — nothing here writes to a checkout, stages a commit, or
+    touches a remote (docs/principles.md #5). Approving is a sign-off, and
+    the input the later apply/verify slice will read.
+
+    Re-reviewing replaces the previous review rather than appending to it.
+    """
+    proposal = analysis.fix_proposal
+    if proposal is None:
+        raise FixReviewError("this run proposed no fixes, so there is nothing to review")
+
+    reviewable = _reviewable_fixes(proposal)
+    seen: set[str] = set()
+    for item in decisions:
+        if item.finding_title in seen:
+            raise FixReviewError(f"duplicate decision for {item.finding_title!r}")
+        seen.add(item.finding_title)
+        if item.finding_title not in reviewable:
+            raise FixReviewError(f"this run proposed no patch for {item.finding_title!r}")
+        # Approving a patch whose original_code isn't in the file would be
+        # signing off on something that cannot be applied. That's a fact we
+        # already checked (app.agents.fix), so refuse it here rather than
+        # letting it fail later. Rejecting one is fine — and expected.
+        if item.decision is FixDecision.APPROVED and not reviewable[item.finding_title]:
+            raise FixReviewError(
+                f"{item.finding_title!r} cannot be approved: its original code no longer "
+                "matches the file, so the patch does not apply"
+            )
+
+    analysis.fix_review = FixReview(decisions=decisions, reviewed_at=datetime.now(UTC)).model_dump(
+        mode="json"
+    )
+    await db.commit()
+    await db.refresh(analysis)
+    return analysis
+
+
+def _reviewable_fixes(proposal: dict[str, object]) -> dict[str, bool]:
+    """Title -> whether its patch still applies, for fixes that have a patch.
+
+    Read off the stored JSONB rather than re-validating it into a
+    FixResult: this only needs two fields, and a run persisted before a
+    later contract change should still be reviewable.
+    """
+    fixes = proposal.get("fixes")
+    if not isinstance(fixes, list):
+        return {}
+    return {
+        fix["finding_title"]: bool(fix.get("original_code_found"))
+        for fix in fixes
+        if isinstance(fix, dict)
+        and isinstance(fix.get("finding_title"), str)
+        and not fix.get("no_fix")
+        and fix.get("patch") is not None
+    }
 
 
 def _resolve_source_root(project: Project) -> Path | None:

@@ -70,6 +70,14 @@ class DesignAnalysis(Base):
     # applied to any checkout (see app.agents.fix), so this is a record of
     # what was suggested, not of what changed.
     fix_proposal: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
+    # The human review of those proposals (app.schemas.fix_review.FixReview)
+    # — the only column here written by a person rather than by the graph,
+    # and the pause docs/principles.md #5 requires before anything is
+    # applied. Null means the run hasn't been reviewed yet, which is the
+    # state every run starts in; it's replaced wholesale on re-review
+    # rather than appended to, since a reviewer changing their mind should
+    # leave one current answer, not two.
+    fix_review: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

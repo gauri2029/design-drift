@@ -13,6 +13,7 @@ from app.agents.types import (
 from app.integrations.axe.types import AccessibilityReport
 from app.integrations.imaging.types import ComparisonResult
 from app.integrations.llm.types import VisualReviewResult
+from app.schemas.fix_review import FixReview
 
 
 class DesignAnalysisRead(BaseModel):
@@ -33,4 +34,6 @@ class DesignAnalysisRead(BaseModel):
     code_analysis: CodeAnalysisResult | None
     # Null when Code Analysis located nothing to patch.
     fix_proposal: FixResult | None
+    # Null until a human reviews the proposals — see app.schemas.fix_review.
+    fix_review: FixReview | None
     created_at: datetime
