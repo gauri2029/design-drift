@@ -83,7 +83,17 @@ const ANALYSIS: DesignAnalysis = {
       },
     ],
   },
+  fix_review: null,
+  fix_application: null,
   created_at: '2026-01-02T00:00:00Z',
+}
+
+const APPROVED = {
+  ...ANALYSIS,
+  fix_review: {
+    decisions: [{ finding_title: 'color-contrast', decision: 'approved' as const }],
+    reviewed_at: '2026-01-03T00:00:00Z',
+  },
 }
 
 function stubFetch(handler: (url: string, method: string) => unknown) {
@@ -159,6 +169,165 @@ describe('DesignQAPanel', () => {
     // Ours, not the model's — a reviewer shouldn't find this out by
     // trying to apply the patch.
     expect(screen.getByText(/does not match current file/i)).toBeInTheDocument()
+  })
+
+  it('records an approve/reject decision on the proposed patches', async () => {
+    const reviewed = APPROVED
+    const put = vi.fn()
+    stubFetch((url, method) => {
+      if (url.endsWith('/design-analysis') && method === 'GET') {
+        return { ok: true, json: async () => [ANALYSIS] }
+      }
+      if (url.endsWith('/fix-review') && method === 'PUT') {
+        put(url)
+        return { ok: true, json: async () => reviewed }
+      }
+      throw new Error(`Unexpected fetch: ${method} ${url}`)
+    })
+
+    render(<DesignQAPanel project={PROJECT} />)
+
+    expect(await screen.findByText(/awaiting your review/i)).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /approve/i }))
+    fireEvent.click(screen.getByRole('button', { name: /save review/i }))
+
+    expect(await screen.findByText(/reviewed /i)).toBeInTheDocument()
+    expect(put).toHaveBeenCalledWith(
+      expect.stringContaining('/design-analysis/run-1/fix-review'),
+    )
+    // The saved decision comes back from the server, not from local state.
+    expect(screen.getByRole('button', { name: /update review/i })).toBeInTheDocument()
+  })
+
+  it('will not let a patch that does not apply be approved', async () => {
+    stubFetch((url, method) => {
+      if (url.endsWith('/design-analysis') && method === 'GET') {
+        return {
+          ok: true,
+          json: async () => [
+            {
+              ...ANALYSIS,
+              fix_proposal: {
+                summary: 'One patch.',
+                fixes: [{ ...ANALYSIS.fix_proposal!.fixes[0], original_code_found: false }],
+              },
+            },
+          ],
+        }
+      }
+      throw new Error(`Unexpected fetch: ${method} ${url}`)
+    })
+
+    render(<DesignQAPanel project={PROJECT} />)
+
+    // The backend refuses this too — this just keeps a reviewer from
+    // spending a click to find out.
+    expect(await screen.findByRole('button', { name: /approve/i })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /reject/i })).toBeEnabled()
+  })
+
+  it('surfaces a rejected review save without losing the decision', async () => {
+    stubFetch((url, method) => {
+      if (url.endsWith('/design-analysis') && method === 'GET') {
+        return { ok: true, json: async () => [ANALYSIS] }
+      }
+      if (url.endsWith('/fix-review') && method === 'PUT') {
+        return { ok: false, status: 409, json: async () => ({ detail: 'patch does not apply' }) }
+      }
+      throw new Error(`Unexpected fetch: ${method} ${url}`)
+    })
+
+    render(<DesignQAPanel project={PROJECT} />)
+    await screen.findByText(/awaiting your review/i)
+
+    fireEvent.click(screen.getByRole('button', { name: /approve/i }))
+    fireEvent.click(screen.getByRole('button', { name: /save review/i }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('patch does not apply')
+    expect(screen.getByRole('button', { name: /approve/i })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+  })
+
+  it('offers to apply only once a review holds an approval, and reports what was written', async () => {
+    const applied = {
+      ...APPROVED,
+      fix_application: {
+        applied_at: '2026-01-04T00:00:00Z',
+        fixes: [
+          {
+            finding_title: 'color-contrast',
+            file_path: 'src/components/Button.tsx',
+            applied: true,
+            reason: null,
+          },
+        ],
+      },
+    }
+    stubFetch((url, method) => {
+      if (url.endsWith('/design-analysis') && method === 'GET') {
+        return { ok: true, json: async () => [APPROVED] }
+      }
+      if (url.endsWith('/apply') && method === 'POST') {
+        return { ok: true, json: async () => applied }
+      }
+      throw new Error(`Unexpected fetch: ${method} ${url}`)
+    })
+
+    render(<DesignQAPanel project={PROJECT} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: /apply approved fixes/i }))
+
+    expect(await screen.findByText(/^applied /i)).toBeInTheDocument()
+    expect(screen.getByText(/written to file/i)).toBeInTheDocument()
+    // Applying is done; re-deciding it would promise something this run
+    // can no longer do.
+    expect(screen.queryByRole('button', { name: /approve/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /apply approved fixes/i })).not.toBeInTheDocument()
+  })
+
+  it('does not offer to apply an unreviewed run', async () => {
+    stubFetch((url, method) => {
+      if (url.endsWith('/design-analysis') && method === 'GET') {
+        return { ok: true, json: async () => [ANALYSIS] }
+      }
+      throw new Error(`Unexpected fetch: ${method} ${url}`)
+    })
+
+    render(<DesignQAPanel project={PROJECT} />)
+
+    await screen.findByText(/awaiting your review/i)
+    expect(screen.queryByRole('button', { name: /apply approved fixes/i })).not.toBeInTheDocument()
+  })
+
+  it('shows why an approved patch was not written', async () => {
+    const applied = {
+      ...APPROVED,
+      fix_application: {
+        applied_at: '2026-01-04T00:00:00Z',
+        fixes: [
+          {
+            finding_title: 'color-contrast',
+            file_path: 'src/components/Button.tsx',
+            applied: false,
+            reason: 'the code this patch replaces is no longer in the file at that place',
+          },
+        ],
+      },
+    }
+    stubFetch((url, method) => {
+      if (url.endsWith('/design-analysis') && method === 'GET') {
+        return { ok: true, json: async () => [applied] }
+      }
+      throw new Error(`Unexpected fetch: ${method} ${url}`)
+    })
+
+    render(<DesignQAPanel project={PROJECT} />)
+
+    expect(await screen.findByText(/not applied/i)).toBeInTheDocument()
+    expect(screen.getByText(/no longer in the file/i)).toBeInTheDocument()
   })
 
   it('explains why code analysis is absent when no source checkout is configured', async () => {

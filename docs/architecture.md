@@ -89,9 +89,8 @@ checkout configured (`Project.source_path`). Fix then runs only if Code
 Analysis actually located at least one finding. A project with no checkout
 still gets every inspection agent and ends after aggregation.
 
-That covers the target flow below through `propose fix`. What remains is
-the human-in-the-loop pause and everything past it — approval, applying a
-fix locally, and Verification.
+That covers the target flow below through `apply fix locally`. What
+remains is Verification and the before/after compare.
 
 Caveats against the target table below:
 
@@ -125,6 +124,45 @@ Caveats against the target table below:
   mentions of "html" don't count) points at the right file instead of
   returning nothing — but only for structural tags, since a bare `div`
   identifies nothing.
+- **The pause is the end of the run, not a suspended graph.** A reviewer
+  approves or rejects each patch afterwards, through `PUT
+  .../design-analysis/{id}/fix-review`, and the decision is stored on the
+  run (`DesignAnalysis.fix_review`, shape in `app/schemas/fix_review.py`).
+  There is deliberately no LangGraph checkpointer yet
+  (docs/principles.md #6): the graph already terminates once the Fix Agent
+  has run, so a checkpointer would buy nothing but the cost of serializing
+  multi-megabyte screenshots out of `DesignQAState` to hold a pause the
+  run's own end already provides. The apply/verify slice will start from
+  the stored approvals as a fresh invocation — which it wants anyway,
+  since verification needs a new browser capture regardless. If a future
+  pause lands *mid-graph*, that's the point to add one.
+- **An approval is a sign-off, not an action.** Nothing writes to a
+  checkout on approval; the decision is recorded and that is all
+  (docs/principles.md #5). It's the durable input the apply step will
+  read, and an audit trail either way. Re-reviewing replaces the previous
+  review rather than appending, so a run has one current answer.
+- **Applying is a separate, explicit act, and the only write in the
+  codebase.** `POST .../design-analysis/{id}/apply` splices the *approved*
+  patches into the project's checkout via `app/tools/apply_patch.py` —
+  every other module under `app/tools/` is read-only. It writes files and
+  stops: no `git`, no staging, no commit, no push (docs/principles.md #5),
+  so the user's own version control stays their undo. Patch targets are
+  confined to the checkout and to the same extension allowlist the search
+  side uses, since a `file_path` that came from an LLM can be `../../…`.
+- **Every patch is re-checked at write time, against the file as it is
+  now.** Approval and application are different moments and the file is
+  the user's in between, so `original_code_found` from the run is not
+  taken as still true: the patch's own line range is tried first, then a
+  whole-file search for the same block, and a block appearing twice is
+  skipped rather than guessed at. What was and wasn't written is recorded
+  per patch (`DesignAnalysis.fix_application`) — an approved patch that no
+  longer fits is reported, never forced. Applying happens once per run; a
+  second attempt is refused rather than re-run against a checkout that has
+  already changed.
+- **A patch that failed verification cannot be approved.** Whether the
+  code a patch replaces is still in the file was already checked
+  (`original_code_found`), so approving one that fails is refused with a
+  409 rather than recorded. Rejecting one is allowed, and expected.
 - **The Fix Agent proposes text and stops.** Nothing writes to a checkout,
   stages a commit, or touches a remote (docs/principles.md #5). It runs
   only on findings Code Analysis actually located, since a patch needs a
@@ -197,6 +235,8 @@ read/write:
 | Accessibility | Deterministic a11y violations + AI interpretation | axe-core ✅, LLM (interpretation only) ✅ |
 | Code Analysis | Map findings to exact source locations | repo content search ✅, LLM ✅ |
 | Fix Agent | Propose a code patch (never applies/publishes) | LLM structured output ✅ |
+| *(human review)* | Approve/reject each proposed patch before anything is applied | none — a person, via `PUT .../fix-review` ✅ |
+| *(apply)* | Write approved patches into the checkout, re-checked at write time | filesystem, via `POST .../apply` ✅ |
 | Verification | Re-run checks after a fix, before/after compare | Playwright, axe-core, image diffing |
 
 We are *not* splitting these further (e.g. separate "screenshot agent" vs.

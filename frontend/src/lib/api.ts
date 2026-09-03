@@ -364,6 +364,12 @@ export interface DesignAnalysis {
   // Proposed patches only — never applied. Null when nothing was located
   // to patch.
   fix_proposal: FixResult | null
+  // Null until a human reviews the proposals — the pause in
+  // docs/architecture.md's workflow. This is the one field on a run
+  // written by a person rather than by an agent.
+  fix_review: FixReview | null
+  // Null until the approved patches are written to the checkout.
+  fix_application: FixApplication | null
   created_at: string
 }
 
@@ -424,4 +430,74 @@ export interface VerifiedFix {
 export interface FixResult {
   summary: string
   fixes: VerifiedFix[]
+}
+
+// Mirrors app/schemas/fix_review.py. A decision is recorded, not acted on:
+// nothing in the backend writes to a checkout (docs/principles.md #5), so
+// approving means a human signed off on the patch, not that it was applied.
+export type FixDecision = 'approved' | 'rejected'
+
+export interface FixDecisionItem {
+  finding_title: string
+  decision: FixDecision
+  note?: string | null
+}
+
+export interface FixReview {
+  decisions: FixDecisionItem[]
+  reviewed_at: string
+}
+
+export async function reviewDesignAnalysisFixes(
+  projectId: string,
+  analysisId: string,
+  decisions: FixDecisionItem[],
+): Promise<DesignAnalysis> {
+  const response = await fetch(
+    `${API_BASE_URL}/api/v1/projects/${projectId}/design-analysis/${analysisId}/fix-review`,
+    {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ decisions }),
+    },
+  )
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { detail?: string } | null
+    throw new Error(body?.detail ?? `Failed to save the review (${response.status})`)
+  }
+
+  return (await response.json()) as DesignAnalysis
+}
+
+// Mirrors app/schemas/fix_application.py. Separate from FixReview because
+// a patch can be approved and still not applied — the file may have
+// changed in between, and that's the case worth seeing.
+export interface AppliedFix {
+  finding_title: string
+  file_path: string
+  applied: boolean
+  reason: string | null
+}
+
+export interface FixApplication {
+  applied_at: string
+  fixes: AppliedFix[]
+}
+
+export async function applyDesignAnalysisFixes(
+  projectId: string,
+  analysisId: string,
+): Promise<DesignAnalysis> {
+  const response = await fetch(
+    `${API_BASE_URL}/api/v1/projects/${projectId}/design-analysis/${analysisId}/apply`,
+    { method: 'POST' },
+  )
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { detail?: string } | null
+    throw new Error(body?.detail ?? `Failed to apply the approved patches (${response.status})`)
+  }
+
+  return (await response.json()) as DesignAnalysis
 }
