@@ -66,6 +66,10 @@ class DesignAnalysis(Base):
     # project has no source checkout (see app.agents.supervisor's fork), so
     # unlike the columns above this one stays null on plenty of good runs.
     code_analysis: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
+    # Fix Agent's proposed patches. Proposals only — nothing here has been
+    # applied to any checkout (see app.agents.fix), so this is a record of
+    # what was suggested, not of what changed.
+    fix_proposal: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

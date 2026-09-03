@@ -230,3 +230,89 @@ class CodeAnalysisResult(BaseModel):
         default_factory=list,
         description="One entry per finding you were given, in the same order.",
     )
+
+
+class FixConfidence(StrEnum):
+    HIGH = "high"
+    MEDIUM = "medium"
+    LOW = "low"
+
+
+class Patch(BaseModel):
+    file_path: str = Field(
+        description="Path of the file to change, copied exactly from the located finding."
+    )
+    line_start: int = Field(description="First line the replacement covers, from the snippet.")
+    line_end: int = Field(description="Last line the replacement covers, inclusive.")
+    original_code: str = Field(
+        description=(
+            "The exact lines being replaced, copied character-for-character from the snippet "
+            "WITHOUT the line-number prefixes. This is checked against the real file, so an "
+            "approximation will be rejected."
+        )
+    )
+    replacement_code: str = Field(
+        description=(
+            "What those lines should become. Keep the surrounding indentation style. Change "
+            "only what the finding calls for — an unrelated tidy-up makes the patch harder to "
+            "review and easier to reject."
+        )
+    )
+
+
+class ProposedFix(BaseModel):
+    finding_title: str = Field(
+        description="The finding's title, copied exactly from the list you were given."
+    )
+    no_fix: bool = Field(
+        description=(
+            "True when you can't propose a safe, self-contained patch — for example when the "
+            "correct content isn't in the evidence you were shown, or the fix is a structural "
+            "change spanning more than the snippet. Saying so is a correct answer."
+        )
+    )
+    patch: Patch | None = Field(
+        default=None, description="The proposed change. Must be null when no_fix is true."
+    )
+    explanation: str = Field(
+        description=(
+            "Why this change fixes the finding — or, when no_fix is true, what stopped you and "
+            "what a human would need to decide."
+        )
+    )
+    confidence: FixConfidence = Field(
+        description=(
+            "How confident you are the patch is correct and complete. Reserve 'high' for a "
+            "change fully determined by the evidence, with nothing guessed."
+        )
+    )
+
+
+class FixProposal(BaseModel):
+    """What the Fix Agent's LLM call returns."""
+
+    summary: str = Field(
+        description="One short paragraph on what you're proposing and anything left for a human."
+    )
+    fixes: list[ProposedFix] = Field(
+        default_factory=list,
+        description="One entry per located finding you were given, in the same order.",
+    )
+
+
+class VerifiedFix(ProposedFix):
+    """A proposed fix plus the one claim we check ourselves.
+
+    A patch names code it intends to replace. Whether that code is really
+    in the file at those lines is a fact, not a judgment — so it's checked
+    deterministically rather than taken on the model's word (see
+    app.agents.fix). A patch that fails this is still shown, flagged, so a
+    reviewer sees the proposal *and* that it doesn't apply.
+    """
+
+    original_code_found: bool
+
+
+class FixResult(BaseModel):
+    summary: str
+    fixes: list[VerifiedFix] = []

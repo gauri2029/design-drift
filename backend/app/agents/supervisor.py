@@ -30,6 +30,7 @@ NODE_VISUAL_COMPARISON = "visual_comparison"
 NODE_ACCESSIBILITY = "accessibility"
 NODE_AGGREGATE_FINDINGS = "aggregate_findings"
 NODE_CODE_ANALYSIS = "code_analysis"
+NODE_FIX = "fix"
 NODE_END = "end"
 
 
@@ -54,6 +55,8 @@ def route_after_supervisor(state: DesignQAState) -> str:
         return NODE_AGGREGATE_FINDINGS
     if _should_run_code_analysis(state):
         return NODE_CODE_ANALYSIS
+    if _should_run_fix(state):
+        return NODE_FIX
     return NODE_END
 
 
@@ -66,3 +69,14 @@ def _should_run_code_analysis(state: DesignQAState) -> bool:
     # `route: problems found?` — with nothing found, there's nothing to
     # locate in the code, so the run ends here.
     return bool(state.aggregated_findings and state.aggregated_findings.problems_found)
+
+
+def _should_run_fix(state: DesignQAState) -> bool:
+    if state.fix_proposal is not None:
+        return False  # already ran
+    if state.code_analysis is None or state.source_root is None:
+        return False  # nothing was located, so there's nothing to patch
+    # A patch needs a file and a line range. A run where every finding came
+    # back no_match has neither, and asking for a fix anyway would be
+    # asking the model to invent one (see app.agents.fix's docstring).
+    return any(not location.no_match for location in state.code_analysis.locations)

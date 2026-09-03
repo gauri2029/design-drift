@@ -361,6 +361,9 @@ export interface DesignAnalysis {
   // Null when the workflow's `problems found?` fork skipped Code Analysis —
   // no problems, or the project has no source checkout configured.
   code_analysis: CodeAnalysisResult | null
+  // Proposed patches only — never applied. Null when nothing was located
+  // to patch.
+  fix_proposal: FixResult | null
   created_at: string
 }
 
@@ -393,4 +396,32 @@ export function designAnalysisProductionUrl(projectId: string, analysisId: strin
 
 export function designAnalysisDiffUrl(projectId: string, analysisId: string): string {
   return `${API_BASE_URL}/api/v1/projects/${projectId}/design-analysis/${analysisId}/diff`
+}
+
+export type FixConfidence = 'high' | 'medium' | 'low'
+
+export interface Patch {
+  file_path: string
+  line_start: number
+  line_end: number
+  original_code: string
+  replacement_code: string
+}
+
+// Mirrors app/agents/types.py:VerifiedFix. `original_code_found` is ours,
+// not the model's: whether the code a patch claims to replace is really in
+// the file is checked in Python (see app/agents/fix.py). A false here means
+// the patch reads plausibly but doesn't apply.
+export interface VerifiedFix {
+  finding_title: string
+  no_fix: boolean
+  patch: Patch | null
+  explanation: string
+  confidence: FixConfidence
+  original_code_found: boolean
+}
+
+export interface FixResult {
+  summary: string
+  fixes: VerifiedFix[]
 }
