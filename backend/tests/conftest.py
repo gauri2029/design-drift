@@ -162,6 +162,7 @@ AGENT_PROMPT_MARKERS = {
     "visual_comparison": "You review a web page's visual implementation",
     "accessibility": "You triage a web page's accessibility violations",
     "code_analysis": "You locate the exact source code responsible",
+    "fix": "You propose minimal source-code patches",
 }
 
 

@@ -22,6 +22,7 @@ from app.agents.supervisor import (
     NODE_CODE_ANALYSIS,
     NODE_DESIGN_ANALYSIS,
     NODE_END,
+    NODE_FIX,
     NODE_PRODUCTION_ANALYSIS,
     NODE_VISUAL_COMPARISON,
     route_after_supervisor,
@@ -33,6 +34,7 @@ from app.agents.types import (
     CodeAnalysisResult,
     DesignAnalysisResult,
     FindingSource,
+    FixResult,
 )
 from app.core.config import get_settings
 from app.graph.state import DesignQAState
@@ -101,6 +103,26 @@ CODE_ANALYSIS_RESULT = {
                 "code_evidence": '<button id="hero-cta" class="btn-primary">Get started</button>',
             },
             "explanation": "The snippet shows the button's width class.",
+            "confidence": "medium",
+        }
+    ],
+}
+FIX_PROPOSAL_RESULT = {
+    "summary": "One small patch adds the missing lang attribute.",
+    "fixes": [
+        {
+            "finding_title": "Button is narrower than designed",
+            "no_fix": False,
+            "patch": {
+                "file_path": "src/components/Button.tsx",
+                "line_start": 3,
+                "line_end": 3,
+                "original_code": 'export const Button = () => <div id="card" />',
+                "replacement_code": (
+                    'export const Button = () => <div id="card" className="w-full" />'
+                ),
+            },
+            "explanation": "Widens the card to match the design.",
             "confidence": "medium",
         }
     ],
@@ -249,11 +271,23 @@ def test_route_after_supervisor_skips_code_analysis_without_a_source_checkout() 
     assert route_after_supervisor(state) == NODE_END
 
 
-def test_route_after_supervisor_ends_once_code_analysis_has_run() -> None:
+def test_route_after_supervisor_goes_to_fix_once_code_analysis_has_located_something() -> None:
     state = _fully_analyzed_state()
     state.aggregated_findings = AggregatedFindings(problems_found=True, findings=[])
     state.source_root = Path("/tmp/some-checkout")
     state.code_analysis = CodeAnalysisResult.model_validate(CODE_ANALYSIS_RESULT)
+
+    assert route_after_supervisor(state) == NODE_FIX
+
+
+def test_route_after_supervisor_ends_once_a_fix_has_been_proposed() -> None:
+    state = _fully_analyzed_state()
+    state.aggregated_findings = AggregatedFindings(problems_found=True, findings=[])
+    state.source_root = Path("/tmp/some-checkout")
+    state.code_analysis = CodeAnalysisResult.model_validate(CODE_ANALYSIS_RESULT)
+    # Built directly, not from FIX_PROPOSAL_RESULT: that's the *model's*
+    # output shape, while FixResult carries the verification we add on top.
+    state.fix_proposal = FixResult(summary="proposed", fixes=[])
 
     assert route_after_supervisor(state) == NODE_END
 
@@ -396,6 +430,7 @@ async def test_run_design_qa_runs_code_analysis_when_a_source_checkout_exists(
             "visual_comparison": VISUAL_COMPARISON_RESULT,
             "accessibility": ACCESSIBILITY_INTERPRETATION,
             "code_analysis": CODE_ANALYSIS_RESULT,
+            "fix": FIX_PROPOSAL_RESULT,
         }
     )
 
@@ -411,6 +446,13 @@ async def test_run_design_qa_runs_code_analysis_when_a_source_checkout_exists(
     assert final_state.aggregated_findings is not None
     assert final_state.aggregated_findings.problems_found is True
     assert final_state.code_analysis == CodeAnalysisResult.model_validate(CODE_ANALYSIS_RESULT)
+
+    # The Fix Agent ran last and its patch was checked against the real
+    # checkout: Button.tsx line 3 really is what FIX_PROPOSAL_RESULT
+    # claims to replace, so the verification must confirm it.
+    assert final_state.fix_proposal is not None
+    assert len(final_state.fix_proposal.fixes) == 1
+    assert final_state.fix_proposal.fixes[0].original_code_found is True
 
     # The Code Analysis call is last and text-only, and carries retrieved
     # *code*, not just a file list: the matching file, the real line number

@@ -52,8 +52,8 @@ backend/app/
 ├── models/       SQLAlchemy ORM models          (added when we persist data)
 ├── schemas/      Pydantic request/response models (added as endpoints need them)
 ├── services/     Business logic, orchestration    (added when logic exists beyond routing)
-├── agents/       LangGraph runtime nodes            (Supervisor + four inspection agents + aggregation + Code Analysis built — Phase 3)
-├── graph/        LangGraph graph definition/state   (workflow through Code Analysis built — Phase 3)
+├── agents/       LangGraph runtime nodes            (Supervisor + four inspection agents + aggregation + Code Analysis + Fix built — Phase 3)
+├── graph/        LangGraph graph definition/state   (workflow through Fix Agent built — Phase 3)
 ├── tools/        Agent tool implementations          (repo_search + anchors built — Phase 3)
 ├── integrations/ Figma, Playwright, axe-core clients  (not yet built — Phase 1+)
 └── evals/        AI evaluation harness                (not yet built — Phase 8)
@@ -65,7 +65,7 @@ straightforward query patterns, SQLAlchemy sessions used directly from
 `services/` are simpler to read and debug. We'll introduce a repository
 layer only if query logic starts duplicating across services.
 
-## Runtime multi-agent workflow (inspection agents + aggregation + Code Analysis built)
+## Runtime multi-agent workflow (inspection agents + aggregation + Code Analysis + Fix built)
 
 Design Drift's own agents (distinct from the Claude Code agents used to
 *build* this repo — see `.claude/agents/`) are implemented as LangGraph
@@ -73,24 +73,25 @@ nodes operating on one shared, structured state object — not by passing
 free-form natural-language messages between agents.
 
 The Supervisor, all four inspection agents (Design Analysis, Production
-Analysis, Visual Comparison, Accessibility), the findings aggregation, and
-the Code Analysis Agent are wired up so far (`app/graph/workflow.py`,
-`app/agents/`): `START -> supervisor -> (design_analysis -> supervisor)*
--> (production_analysis -> supervisor)* -> (visual_comparison ->
-supervisor)* -> (accessibility -> supervisor)* -> (aggregate_findings ->
-supervisor)* -> (code_analysis -> supervisor)? -> END`, all exposed
-together via one `POST /api/v1/projects/{project_id}/design-analysis`
-call.
+Analysis, Visual Comparison, Accessibility), the findings aggregation, the
+Code Analysis Agent, and the Fix Agent are wired up so far
+(`app/graph/workflow.py`, `app/agents/`): `START -> supervisor ->
+(design_analysis -> supervisor)* -> (production_analysis -> supervisor)*
+-> (visual_comparison -> supervisor)* -> (accessibility -> supervisor)*
+-> (aggregate_findings -> supervisor)* -> (code_analysis -> supervisor)?
+-> (fix -> supervisor)? -> END`, all exposed together via one `POST
+/api/v1/projects/{project_id}/design-analysis` call.
 
-Note the `?`: every node before Code Analysis always runs, but Code
-Analysis is `route: problems found?` — a real fork, taken only when the
-aggregation found problems *and* the project has a source checkout
-configured (`Project.source_path`). A project without one still gets every
-inspection agent and simply ends after aggregation.
+Note the `?`s: every node up to the aggregation always runs, but the last
+two are conditional. Code Analysis is `route: problems found?` — taken
+only when the aggregation found problems *and* the project has a source
+checkout configured (`Project.source_path`). Fix then runs only if Code
+Analysis actually located at least one finding. A project with no checkout
+still gets every inspection agent and ends after aggregation.
 
-That covers the target flow below through `code analysis`. What remains —
-Fix Agent, Verification, human-in-the-loop — is the part that proposes and
-validates changes rather than diagnosing them.
+That covers the target flow below through `propose fix`. What remains is
+the human-in-the-loop pause and everything past it — approval, applying a
+fix locally, and Verification.
 
 Caveats against the target table below:
 
@@ -124,6 +125,18 @@ Caveats against the target table below:
   mentions of "html" don't count) points at the right file instead of
   returning nothing — but only for structural tags, since a bare `div`
   identifies nothing.
+- **The Fix Agent proposes text and stops.** Nothing writes to a checkout,
+  stages a commit, or touches a remote (docs/principles.md #5). It runs
+  only on findings Code Analysis actually located, since a patch needs a
+  real file and line range rather than prose to work from.
+- **A patch's `original_code` is verified, not trusted.** Whether the code
+  a patch claims to replace is really in the file is a fact, so it's
+  checked in Python (`app/agents/fix.py`) and surfaced as
+  `original_code_found`. A patch that fails is kept and flagged rather
+  than dropped: a reviewer should see both the proposal and that it
+  doesn't apply. This is also why the LLM's `FixProposal` and the stored
+  `FixResult` are separate models — the verification field is ours, and
+  never something the model fills in.
 - **Source checkouts are confined.** `Project.source_path` resolves
   *relative to* `Settings.source_root` and is rejected if it escapes it
   (`..`, absolute paths, or symlinks pointing out). These files get sent to
@@ -183,7 +196,7 @@ read/write:
 | Visual Comparison | Expected vs. actual → structured drift findings | image diffing ✅, multimodal LLM ✅ |
 | Accessibility | Deterministic a11y violations + AI interpretation | axe-core ✅, LLM (interpretation only) ✅ |
 | Code Analysis | Map findings to exact source locations | repo content search ✅, LLM ✅ |
-| Fix Agent | Propose a code patch (never applies/publishes) | LLM structured output |
+| Fix Agent | Propose a code patch (never applies/publishes) | LLM structured output ✅ |
 | Verification | Re-run checks after a fix, before/after compare | Playwright, axe-core, image diffing |
 
 We are *not* splitting these further (e.g. separate "screenshot agent" vs.

@@ -105,6 +105,28 @@ CODE_ANALYSIS_RESULT = {
 }
 
 
+FIX_PROPOSAL_RESULT = {
+    "summary": "One small patch adds the missing lang attribute.",
+    "fixes": [
+        {
+            "finding_title": "Button is narrower than designed",
+            "no_fix": False,
+            "patch": {
+                "file_path": "src/components/Button.tsx",
+                "line_start": 3,
+                "line_end": 3,
+                "original_code": 'export const Button = () => <div id="card" />',
+                "replacement_code": (
+                    'export const Button = () => <div id="card" className="w-full" />'
+                ),
+            },
+            "explanation": "Widens the card to match the design.",
+            "confidence": "medium",
+        }
+    ],
+}
+
+
 def _png_bytes(size: tuple[int, int], color: tuple[int, int, int]) -> bytes:
     image = Image.new("RGB", size, color)
     buffer = BytesIO()
@@ -177,6 +199,7 @@ async def test_design_analysis_lifecycle(monkeypatch, tmp_path, fixture_server) 
             "visual_comparison": VISUAL_COMPARISON_RESULT,
             "accessibility": ACCESSIBILITY_INTERPRETATION,
             "code_analysis": CODE_ANALYSIS_RESULT,
+            "fix": FIX_PROPOSAL_RESULT,
         }
     )
 
@@ -336,6 +359,7 @@ async def test_design_analysis_maps_findings_to_source_files(
             "visual_comparison": VISUAL_COMPARISON_RESULT,
             "accessibility": ACCESSIBILITY_INTERPRETATION,
             "code_analysis": CODE_ANALYSIS_RESULT,
+            "fix": FIX_PROPOSAL_RESULT,
         }
     )
 
@@ -352,6 +376,17 @@ async def test_design_analysis_maps_findings_to_source_files(
     assert location["location"]["file_path"] == "src/components/Button.tsx"
     assert location["location"]["line_start"] >= 1
     assert location["location"]["code_evidence"]
+
+    # Asserted through the API, not just on graph state: the Fix Agent can
+    # run correctly and still be dropped on the way to the database if the
+    # service forgets the column — which is exactly what happened once.
+    fix_proposal = response.json()["fix_proposal"]
+    assert fix_proposal is not None
+    fix = fix_proposal["fixes"][0]
+    assert fix["no_fix"] is False
+    assert fix["patch"]["file_path"] == "src/components/Button.tsx"
+    assert fix["patch"]["replacement_code"]
+    assert fix["original_code_found"] is True
 
 
 @respx.mock

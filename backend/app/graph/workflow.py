@@ -27,6 +27,7 @@ from app.agents.accessibility import accessibility_node
 from app.agents.aggregate_findings import aggregate_findings_node
 from app.agents.code_analysis import code_analysis_node
 from app.agents.design_analysis import design_analysis_node
+from app.agents.fix import fix_node
 from app.agents.production_analysis import production_analysis_node
 from app.agents.supervisor import (
     NODE_ACCESSIBILITY,
@@ -34,6 +35,7 @@ from app.agents.supervisor import (
     NODE_CODE_ANALYSIS,
     NODE_DESIGN_ANALYSIS,
     NODE_END,
+    NODE_FIX,
     NODE_PRODUCTION_ANALYSIS,
     NODE_VISUAL_COMPARISON,
     route_after_supervisor,
@@ -54,6 +56,7 @@ def build_design_qa_graph() -> (
     graph.add_node(NODE_ACCESSIBILITY, accessibility_node)
     graph.add_node(NODE_AGGREGATE_FINDINGS, aggregate_findings_node)
     graph.add_node(NODE_CODE_ANALYSIS, code_analysis_node)
+    graph.add_node(NODE_FIX, fix_node)
 
     graph.add_edge(START, "supervisor")
     graph.add_conditional_edges(
@@ -66,6 +69,7 @@ def build_design_qa_graph() -> (
             NODE_ACCESSIBILITY: NODE_ACCESSIBILITY,
             NODE_AGGREGATE_FINDINGS: NODE_AGGREGATE_FINDINGS,
             NODE_CODE_ANALYSIS: NODE_CODE_ANALYSIS,
+            NODE_FIX: NODE_FIX,
             NODE_END: END,
         },
     )
@@ -75,6 +79,7 @@ def build_design_qa_graph() -> (
     graph.add_edge(NODE_ACCESSIBILITY, "supervisor")
     graph.add_edge(NODE_AGGREGATE_FINDINGS, "supervisor")
     graph.add_edge(NODE_CODE_ANALYSIS, "supervisor")
+    graph.add_edge(NODE_FIX, "supervisor")
 
     return graph.compile()
 

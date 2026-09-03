@@ -93,12 +93,18 @@ async def create_design_analysis(
             mode="json"
         ),
         aggregated_findings=final_state.aggregated_findings.model_dump(mode="json"),
-        # Not asserted non-None like the fields above: Code Analysis is
-        # conditional, so None here is a normal outcome (no problems found,
-        # or no source checkout) rather than a missing artifact.
+        # Not asserted non-None like the fields above: Code Analysis and the
+        # Fix Agent are conditional, so None here is a normal outcome (no
+        # problems found, no source checkout, or nothing located to patch)
+        # rather than a missing artifact.
         code_analysis=(
             final_state.code_analysis.model_dump(mode="json")
             if final_state.code_analysis is not None
+            else None
+        ),
+        fix_proposal=(
+            final_state.fix_proposal.model_dump(mode="json")
+            if final_state.fix_proposal is not None
             else None
         ),
     )

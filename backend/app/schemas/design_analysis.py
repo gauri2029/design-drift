@@ -8,6 +8,7 @@ from app.agents.types import (
     AggregatedFindings,
     CodeAnalysisResult,
     DesignAnalysisResult,
+    FixResult,
 )
 from app.integrations.axe.types import AccessibilityReport
 from app.integrations.imaging.types import ComparisonResult
@@ -30,4 +31,6 @@ class DesignAnalysisRead(BaseModel):
     aggregated_findings: AggregatedFindings | None
     # Null when Code Analysis didn't run — see app.agents.supervisor's fork.
     code_analysis: CodeAnalysisResult | None
+    # Null when Code Analysis located nothing to patch.
+    fix_proposal: FixResult | None
     created_at: datetime

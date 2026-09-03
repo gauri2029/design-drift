@@ -21,6 +21,7 @@ from app.agents.types import (
     AggregatedFindings,
     CodeAnalysisResult,
     DesignAnalysisResult,
+    FixResult,
 )
 from app.integrations.axe.types import AccessibilityReport
 from app.integrations.imaging.types import ComparisonResult
@@ -76,6 +77,11 @@ class DesignQAState(BaseModel):
     # Analysis rather than failing the run.
     source_root: Path | None = None
     code_analysis: CodeAnalysisResult | None = None
+
+    # --- Fix Agent's output ---
+    # Proposed patches only — never applied (see app.agents.fix). None when
+    # Code Analysis didn't run, or located nothing to patch.
+    fix_proposal: FixResult | None = None
 
     # Set by the Supervisor when it decides the workflow can't proceed
     # (e.g. no usable Figma data) — distinct from a node's own tool/LLM

@@ -9,6 +9,7 @@ import {
   type FindingLocation,
   type FindingPriority,
   type Project,
+  type VerifiedFix,
 } from '../lib/api'
 import { Badge, type BadgeTone } from './Badge'
 import { ZoomableImage } from './ZoomableImage'
@@ -97,6 +98,10 @@ function AnalysisResult({ project, analysis }: { project: Project; analysis: Des
 
       <Section title="Source locations">
         <CodeAnalysis analysis={analysis} project={project} />
+      </Section>
+
+      <Section title="Proposed fixes">
+        <FixProposal analysis={analysis} />
       </Section>
 
       <Section title="Design intent (Figma)">
@@ -235,6 +240,69 @@ function LocationItem({ location }: { location: FindingLocation }) {
   )
 }
 
+function FixProposal({ analysis }: { analysis: DesignAnalysis }) {
+  if (!analysis.fix_proposal) {
+    return (
+      <p className="text-sm text-slate-500 dark:text-slate-400">
+        No patches proposed — nothing was located in the source to change.
+      </p>
+    )
+  }
+
+  return (
+    <div className="space-y-2">
+      <p className="text-sm text-slate-600 dark:text-slate-400">{analysis.fix_proposal.summary}</p>
+      <p className="text-xs text-slate-500 dark:text-slate-500">
+        Proposals only. Nothing here has been applied — copy a change in yourself if you agree
+        with it.
+      </p>
+      <ul className="space-y-2">
+        {analysis.fix_proposal.fixes.map((fix, index) => (
+          <FixItem key={`${fix.finding_title}-${index}`} fix={fix} />
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+function FixItem({ fix }: { fix: VerifiedFix }) {
+  return (
+    <li className="rounded-md border border-slate-200 p-3 text-sm dark:border-slate-800">
+      <div className="flex flex-wrap items-center gap-2">
+        {fix.no_fix ? (
+          <Badge tone="neutral">no fix</Badge>
+        ) : (
+          <Badge tone={confidenceTone(fix.confidence)}>{fix.confidence} confidence</Badge>
+        )}
+        {/* A patch can read convincingly and still target code that isn't
+            there. The check is ours, so surface it rather than letting a
+            reviewer discover it by trying to apply the change. */}
+        {fix.patch && !fix.original_code_found && (
+          <Badge tone="danger">does not match current file</Badge>
+        )}
+        <span className="font-medium text-slate-900 dark:text-slate-100">{fix.finding_title}</span>
+      </div>
+
+      {fix.patch && (
+        <>
+          <p className="mt-1 font-mono text-xs text-indigo-700 dark:text-indigo-300">
+            {fix.patch.file_path}:{fix.patch.line_start}
+            {fix.patch.line_end !== fix.patch.line_start && `-${fix.patch.line_end}`}
+          </p>
+          <pre className="mt-1 overflow-x-auto rounded border-l-2 border-red-400 bg-red-50 p-2 text-xs text-slate-800 dark:bg-red-950/30 dark:text-slate-200">
+            <code>{fix.patch.original_code}</code>
+          </pre>
+          <pre className="mt-1 overflow-x-auto rounded border-l-2 border-emerald-400 bg-emerald-50 p-2 text-xs text-slate-800 dark:bg-emerald-950/30 dark:text-slate-200">
+            <code>{fix.patch.replacement_code}</code>
+          </pre>
+        </>
+      )}
+
+      <p className="mt-1 text-slate-600 dark:text-slate-400">{fix.explanation}</p>
+    </li>
+  )
+}
+
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div>
@@ -268,7 +336,7 @@ function priorityTone(priority: FindingPriority): BadgeTone {
   }
 }
 
-function confidenceTone(confidence: FindingLocation['confidence']): BadgeTone {
+function confidenceTone(confidence: FindingLocation['confidence'] | VerifiedFix['confidence']): BadgeTone {
   switch (confidence) {
     case 'high':
       return 'success'

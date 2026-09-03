@@ -64,6 +64,25 @@ const ANALYSIS: DesignAnalysis = {
       },
     ],
   },
+  fix_proposal: {
+    summary: 'One patch raises the button contrast.',
+    fixes: [
+      {
+        finding_title: 'color-contrast',
+        no_fix: false,
+        patch: {
+          file_path: 'src/components/Button.tsx',
+          line_start: 12,
+          line_end: 12,
+          original_code: '<button className="bg-slate-200 text-slate-300">',
+          replacement_code: '<button className="bg-slate-900 text-white">',
+        },
+        explanation: 'Darkens the background so the label meets contrast requirements.',
+        confidence: 'high',
+        original_code_found: true,
+      },
+    ],
+  },
   created_at: '2026-01-02T00:00:00Z',
 }
 
@@ -99,14 +118,47 @@ describe('DesignQAPanel', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /run design qa/i }))
 
-    // Appears twice by design: once as the finding, once as the located
-    // source for that same finding.
-    expect(await screen.findAllByText('color-contrast')).toHaveLength(2)
+    // Appears three times by design — the finding, the source location
+    // found for it, and the patch proposed for it.
+    expect(await screen.findAllByText('color-contrast')).toHaveLength(3)
     // The whole point of the code-analysis step: a real file and line.
     expect(screen.getByText('src/components/Button.tsx:12-14')).toBeInTheDocument()
+    // Twice: as the located evidence, and as the code the patch replaces —
+    // they're the same line, which is the point.
     expect(
-      screen.getByText('<button className="bg-slate-200 text-slate-300">'),
-    ).toBeInTheDocument()
+      screen.getAllByText('<button className="bg-slate-200 text-slate-300">'),
+    ).toHaveLength(2)
+    expect(screen.getByText('<button className="bg-slate-900 text-white">')).toBeInTheDocument()
+  })
+
+  it('shows a proposed patch as before/after, flagging one that no longer applies', async () => {
+    const stale = {
+      ...ANALYSIS,
+      fix_proposal: {
+        summary: 'One patch.',
+        fixes: [
+          {
+            ...ANALYSIS.fix_proposal!.fixes[0],
+            finding_title: 'stale-patch',
+            original_code_found: false,
+          },
+        ],
+      },
+    }
+    stubFetch((url, method) => {
+      if (url.endsWith('/design-analysis') && method === 'GET') {
+        return { ok: true, json: async () => [stale] }
+      }
+      throw new Error(`Unexpected fetch: ${method} ${url}`)
+    })
+
+    render(<DesignQAPanel project={PROJECT} />)
+
+    expect(await screen.findByText('stale-patch')).toBeInTheDocument()
+    expect(screen.getByText('<button className="bg-slate-900 text-white">')).toBeInTheDocument()
+    // Ours, not the model's — a reviewer shouldn't find this out by
+    // trying to apply the patch.
+    expect(screen.getByText(/does not match current file/i)).toBeInTheDocument()
   })
 
   it('explains why code analysis is absent when no source checkout is configured', async () => {
