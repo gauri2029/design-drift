@@ -97,17 +97,13 @@ def _anchors_for(finding: AggregatedFinding, state: DesignQAState) -> list[Ancho
     narrows to the elements axe flagged for that specific rule.
 
     Visual findings have no such link — they're the Visual Comparison
-    Agent's prose about two images — so they get only quoted literals from
-    the finding text, plus the project's target selector. When a visual
-    finding quotes no visible copy, that legitimately yields no anchors
-    and the model is told to answer no_match.
-
-    That asymmetry is the honest state of things, not an oversight: the
-    fix is for Production Analysis to extract the DOM alongside its
-    screenshot, so visual findings get real element evidence too. That's
-    still listed as not-yet-built in docs/architecture.md, and guessing at
-    keywords from prose in the meantime would just manufacture
-    confident-looking noise.
+    Agent's prose about two images — so what they name is looked up in the
+    page's DOM snapshot instead: a finding about a button the model called
+    "Links" resolves to that element's real id and classes, which is the
+    same kind of evidence axe gives an accessibility finding. When a
+    visual finding names nothing that exists on the page, that legitimately
+    yields no anchors and the model is told to answer no_match, rather than
+    keywords being guessed out of prose.
     """
     is_accessibility = finding.source is FindingSource.ACCESSIBILITY
     return extract_anchors(
@@ -115,6 +111,7 @@ def _anchors_for(finding: AggregatedFinding, state: DesignQAState) -> list[Ancho
         accessibility_report=state.accessibility_report,
         violation_ids=[finding.title] if is_accessibility else [],
         target_selector=state.target_selector,
+        dom_snapshot=state.production_dom,
     )
 
 

@@ -13,9 +13,14 @@ kept alongside value:
 - Accessibility findings carry real DOM evidence, because axe-core reports
   the offending element's `html` and CSS `target` per violation. Ids and
   aria-labels from there are strong, near-unique signals.
-- Visual findings are LLM prose, so the only deterministic thing to pull
-  is quoted literals ("Get started") — the model tends to quote visible
-  copy, and visible copy is exactly what appears in source.
+- Visual findings are LLM prose, so the deterministic thing to pull is
+  quoted literals ("Get started") and title-case section names — the model
+  tends to name what it saw, and visible copy is exactly what appears in
+  source. Those literals are then looked up in the page's DOM snapshot, so
+  a finding that names a button gets that button's real id and classes,
+  not just the words. That lookup is what closed the gap between visual
+  and accessibility findings: before it, only elements axe-core happened
+  to flag had any element evidence at all.
 
 Nothing here reads the repo; that's app.tools.repo_search's job.
 """
@@ -28,6 +33,7 @@ from html.parser import HTMLParser
 from pydantic import BaseModel
 
 from app.integrations.axe.types import AccessibilityReport
+from app.integrations.playwright.dom import DomElement, DomSnapshot
 
 # Weights feed candidate ranking (see repo_search.search_corpus). Ordered
 # by how close to unique the signal usually is: an id or an aria-label
@@ -114,6 +120,12 @@ _PHRASE_LEAD_WORDS = ("The ", "A ", "An ", "This ", "These ", "Those ", "Its ")
 # is a sentence being quoted, not a UI string worth searching for.
 _QUOTED_LITERAL = re.compile(r"[\"'`]([^\"'`\n]{3,60})[\"'`]")
 
+# A literal that matches this many elements isn't naming one of them —
+# it's a word the page repeats ("Read more", "Home"). Anchoring on all of
+# their ids and classes at once would drag in half the page's markup and
+# rank the wrong file first, so the literal is dropped instead.
+MAX_DOM_MATCHES_PER_LITERAL = 5
+
 
 class AnchorKind(StrEnum):
     ID = "id"
@@ -188,6 +200,7 @@ def extract_anchors(
     accessibility_report: AccessibilityReport | None = None,
     violation_ids: Sequence[str] | None = None,
     target_selector: str | None = None,
+    dom_snapshot: DomSnapshot | None = None,
 ) -> list[Anchor]:
     """Collect anchors, strongest kind first.
 
@@ -195,6 +208,11 @@ def extract_anchors(
     passing the ids behind one finding keeps that finding's search from
     being polluted by unrelated elements elsewhere on the page. Omit it to
     use every violation.
+
+    `dom_snapshot` is what the page actually contained (see
+    app.integrations.playwright.dom). Literals pulled from `texts` are
+    looked up in it, so prose that names a UI element yields that
+    element's id and classes rather than only the words in it.
     """
     collected: list[Anchor] = []
 
@@ -211,14 +229,60 @@ def extract_anchors(
                 if node.html:
                     collected.extend(_from_html(node.html))
 
+    literals: list[str] = []
     for text in texts:
-        collected.extend(
-            Anchor(kind=AnchorKind.TEXT, value=_normalize_text(literal))
-            for literal in _QUOTED_LITERAL.findall(text)
-        )
-        collected.extend(Anchor(kind=AnchorKind.PHRASE, value=phrase) for phrase in _phrases(text))
+        for literal in _QUOTED_LITERAL.findall(text):
+            normalized = _normalize_text(literal)
+            literals.append(normalized)
+            collected.append(Anchor(kind=AnchorKind.TEXT, value=normalized))
+        for phrase in _phrases(text):
+            literals.append(phrase)
+            collected.append(Anchor(kind=AnchorKind.PHRASE, value=phrase))
+
+    if dom_snapshot is not None:
+        collected.extend(_from_dom(dom_snapshot, literals))
 
     return _deduplicate(anchor for anchor in collected if _is_usable(anchor))
+
+
+def _from_dom(snapshot: DomSnapshot, literals: Sequence[str]) -> list[Anchor]:
+    """Turn "the finding mentioned X" into "here is the element that is X".
+
+    Only elements the literal actually appears in — no fuzzy matching, no
+    scoring. Either the page contains that copy or it doesn't, and
+    guessing at near-misses would manufacture exactly the confident noise
+    this module exists to avoid.
+    """
+    anchors: list[Anchor] = []
+    for literal in literals:
+        if len(literal) < MIN_ANCHOR_LENGTH:
+            continue
+        matched = [element for element in snapshot.elements if _mentions(element, literal)]
+        if not matched or len(matched) > MAX_DOM_MATCHES_PER_LITERAL:
+            continue
+        for element in matched:
+            anchors.extend(_from_element(element))
+    return anchors
+
+
+def _mentions(element: DomElement, literal: str) -> bool:
+    needle = literal.lower()
+    haystacks = (element.text or "", element.accessible_name or "")
+    return any(needle in haystack.lower() for haystack in haystacks)
+
+
+def _from_element(element: DomElement) -> list[Anchor]:
+    anchors: list[Anchor] = []
+    if element.element_id:
+        anchors.append(Anchor(kind=AnchorKind.ID, value=element.element_id))
+    if element.accessible_name:
+        anchors.append(Anchor(kind=AnchorKind.ARIA_LABEL, value=element.accessible_name))
+    anchors.extend(Anchor(kind=AnchorKind.CLASS, value=name) for name in element.classes)
+    # Same rule as an axe bare-tag target: only when the tag identifies
+    # something on its own.
+    if element.tag in _STRUCTURAL_TAGS:
+        anchors.append(Anchor(kind=AnchorKind.TAG, value=element.tag))
+    return anchors
 
 
 def _from_selector(selector: str) -> list[Anchor]:
