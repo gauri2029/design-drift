@@ -12,13 +12,16 @@ from app.integrations.storage.local import get_storage_backend
 from app.models.project import Project
 from app.schemas.design_analysis import DesignAnalysisRead
 from app.schemas.fix_review import FixReviewRequest
+from app.schemas.verification import VerificationRequest
 from app.services import design_analysis as design_analysis_service
 from app.services import projects as projects_service
+from app.services import verification as verification_service
 from app.services.design_analysis import (
     FixApplicationError,
     FixReviewError,
     ProjectNotAnalyzableError,
 )
+from app.services.verification import NotVerifiableError
 from app.tools.repo_search import SourceNotAccessibleError
 
 router = APIRouter(prefix="/projects/{project_id}/design-analysis", tags=["design-analysis"])
@@ -153,3 +156,76 @@ async def apply_design_analysis_fixes(
     except SourceNotAccessibleError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     return DesignAnalysisRead.model_validate(analysis)
+
+
+@router.post("/{design_analysis_id}/verify", response_model=DesignAnalysisRead)
+async def verify_design_analysis(
+    project_id: UUID,
+    design_analysis_id: UUID,
+    request: VerificationRequest | None = None,
+    db: AsyncSession = Depends(get_db),
+    storage: StorageBackend = Depends(get_storage_backend),
+) -> DesignAnalysisRead:
+    """Re-measure the page and judge whether the applied patches worked.
+
+    Launches a browser and makes a paid LLM call, same as running the
+    workflow, so it's an explicit action rather than something that
+    follows applying automatically.
+    """
+    project = await _get_project_or_404(project_id, db)
+    analysis = await design_analysis_service.get_design_analysis(db, project_id, design_analysis_id)
+    if analysis is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="design analysis not found"
+        )
+    try:
+        analysis = await verification_service.verify_design_analysis(
+            db,
+            project,
+            analysis,
+            storage,
+            target_url=request.target_url if request else None,
+        )
+    except NotVerifiableError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except LLMNotConfiguredError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    except LLMResponseError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    except PlaywrightCaptureError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    except AccessibilityScanError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    return DesignAnalysisRead.model_validate(analysis)
+
+
+@router.get("/{design_analysis_id}/verification-production")
+async def get_verification_production_screenshot(
+    project_id: UUID,
+    design_analysis_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    storage: StorageBackend = Depends(get_storage_backend),
+) -> Response:
+    await _get_project_or_404(project_id, db)
+    analysis = await design_analysis_service.get_design_analysis(db, project_id, design_analysis_id)
+    if analysis is None or analysis.verification_screenshot_key is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="verification not found")
+    return Response(
+        content=storage.read(analysis.verification_screenshot_key), media_type="image/png"
+    )
+
+
+@router.get("/{design_analysis_id}/verification-diff")
+async def get_verification_diff_image(
+    project_id: UUID,
+    design_analysis_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    storage: StorageBackend = Depends(get_storage_backend),
+) -> Response:
+    await _get_project_or_404(project_id, db)
+    analysis = await design_analysis_service.get_design_analysis(db, project_id, design_analysis_id)
+    if analysis is None or analysis.verification_diff_image_key is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="verification not found")
+    return Response(
+        content=storage.read(analysis.verification_diff_image_key), media_type="image/png"
+    )

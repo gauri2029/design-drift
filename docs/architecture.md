@@ -53,8 +53,8 @@ backend/app/
 ├── schemas/      Pydantic request/response models (added as endpoints need them)
 ├── services/     Business logic, orchestration    (added when logic exists beyond routing)
 ├── agents/       LangGraph runtime nodes            (Supervisor + four inspection agents + aggregation + Code Analysis + Fix built — Phase 3)
-├── graph/        LangGraph graph definition/state   (workflow through Fix Agent built — Phase 3)
-├── tools/        Agent tool implementations          (repo_search + anchors built — Phase 3)
+├── graph/        LangGraph graph definition/state   (Design QA + verification graphs built — Phase 3)
+├── tools/        Agent tool implementations          (repo_search, anchors, apply_patch built — Phase 3)
 ├── integrations/ Figma, Playwright, axe-core clients  (not yet built — Phase 1+)
 └── evals/        AI evaluation harness                (not yet built — Phase 8)
 ```
@@ -89,8 +89,10 @@ checkout configured (`Project.source_path`). Fix then runs only if Code
 Analysis actually located at least one finding. A project with no checkout
 still gets every inspection agent and ends after aggregation.
 
-That covers the target flow below through `apply fix locally`. What
-remains is Verification and the before/after compare.
+That covers the whole target flow below. Verification runs as a second,
+separate graph (`app/graph/verification_workflow.py`): `START -> recapture
+-> (verification)? -> END`, triggered by `POST
+.../design-analysis/{id}/verify`.
 
 Caveats against the target table below:
 
@@ -159,6 +161,33 @@ Caveats against the target table below:
   longer fits is reported, never forced. Applying happens once per run; a
   second attempt is refused rather than re-run against a checkout that has
   already changed.
+- **Verification is a second graph, not more nodes on the first.** It
+  runs later, against a page rebuilt since, from inputs the original run
+  recorded rather than from anything a node upstream just produced — so it
+  gets its own state (`app/graph/verification_state.py`) instead of a
+  DesignQAState where half the fields are meaningless at any moment. Its
+  shape is linear because it has nothing to route between; the one
+  conditional edge is the deterministic shortcut below.
+- **Before and after are measured identically.** The recapture node re-runs
+  the same three tools at the same Figma-matched viewport as the original
+  Production Analysis, Accessibility, and Visual Comparison steps. A
+  different capture width would show up as a change the patch didn't
+  cause, which is the same failure the `match_figma` viewport fix already
+  addressed once.
+- **The measurements are computed; only the verdicts are judged.** Which
+  axe rules stopped failing, still fail, or newly fail is set arithmetic
+  over rule ids (docs/principles.md #2), and it's handed to the model as
+  evidence *and* kept in `VerificationResult` beside the verdicts, so a
+  reader can check a verdict against a measurement instead of trusting it.
+  `unclear` is an allowed verdict, for the same reason `no_match` is.
+- **An unchanged page is reported as unchanged, not as a failed fix.**
+  Patches are written to a local checkout, so a project whose target is a
+  deployed site sees nothing until it's rebuilt — which looks identical to
+  a fix that did nothing. The recapture node detects a byte-identical
+  capture, answers deterministically, and routes straight to END rather
+  than paying a multimodal model to compare two identical images. The
+  verify request therefore takes an optional `target_url` override, so a
+  local dev server can be checked before deploying.
 - **A patch that failed verification cannot be approved.** Whether the
   code a patch replaces is still in the file was already checked
   (`original_code_found`), so approving one that fails is refused with a
@@ -237,7 +266,7 @@ read/write:
 | Fix Agent | Propose a code patch (never applies/publishes) | LLM structured output ✅ |
 | *(human review)* | Approve/reject each proposed patch before anything is applied | none — a person, via `PUT .../fix-review` ✅ |
 | *(apply)* | Write approved patches into the checkout, re-checked at write time | filesystem, via `POST .../apply` ✅ |
-| Verification | Re-run checks after a fix, before/after compare | Playwright, axe-core, image diffing |
+| Verification | Re-run checks after a fix, before/after compare | Playwright ✅, axe-core ✅, image diffing ✅, multimodal LLM ✅ |
 
 We are *not* splitting these further (e.g. separate "screenshot agent" vs.
 "DOM agent") because that would add coordination overhead without adding a

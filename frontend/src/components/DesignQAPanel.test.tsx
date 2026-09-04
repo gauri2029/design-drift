@@ -85,6 +85,9 @@ const ANALYSIS: DesignAnalysis = {
   },
   fix_review: null,
   fix_application: null,
+  verification: null,
+  verification_screenshot_key: null,
+  verification_diff_image_key: null,
   created_at: '2026-01-02T00:00:00Z',
 }
 

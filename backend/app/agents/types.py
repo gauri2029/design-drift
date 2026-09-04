@@ -316,3 +316,79 @@ class VerifiedFix(ProposedFix):
 class FixResult(BaseModel):
     summary: str
     fixes: list[VerifiedFix] = []
+
+
+class VerificationVerdict(StrEnum):
+    RESOLVED = "resolved"
+    UNRESOLVED = "unresolved"
+    UNCLEAR = "unclear"
+
+
+class FindingVerification(BaseModel):
+    finding_title: str = Field(
+        description="The finding's title, copied exactly from the list you were given."
+    )
+    verdict: VerificationVerdict = Field(
+        description=(
+            "'resolved' only when the evidence positively shows the problem is gone. "
+            "'unresolved' when it's still visibly there. 'unclear' when the evidence you "
+            "were given can't tell you either way — which is a correct answer, not a "
+            "failure to decide."
+        )
+    )
+    explanation: str = Field(
+        description="What in the evidence led you to that verdict. Point at something specific."
+    )
+
+
+class VerificationJudgment(BaseModel):
+    """What the Verification Agent's LLM call returns."""
+
+    summary: str = Field(
+        description="One short paragraph on whether the applied fixes did what they intended."
+    )
+    findings: list[FindingVerification] = Field(
+        default_factory=list,
+        description="One entry per finding you were asked about, in the same order.",
+    )
+    regressions: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Anything that looks worse after the change than before it. Empty is the "
+            "expected answer — only list something you can actually see in the evidence."
+        ),
+    )
+
+
+class AccessibilityDelta(BaseModel):
+    """Which axe-core rules changed state across the fix.
+
+    Computed in Python from the two scans, never asked of the model: axe
+    reports rule ids, and set arithmetic over them is exact
+    (docs/principles.md #2).
+    """
+
+    resolved_rule_ids: list[str] = []
+    remaining_rule_ids: list[str] = []
+    # Rules that weren't failing before. The one signal here that most
+    # deserves a human's attention.
+    new_rule_ids: list[str] = []
+
+
+class VerificationResult(VerificationJudgment):
+    """The judgment plus the measurements it was made from.
+
+    Same split as VerifiedFix vs. ProposedFix: everything below this line
+    is ours, computed rather than generated, and is what the verdicts have
+    to be read against.
+    """
+
+    accessibility_delta: AccessibilityDelta
+    mismatch_percentage_before: float
+    mismatch_percentage_after: float
+    # False when the re-captured page is byte-identical to the one from the
+    # original run. That usually means the target URL is a deployed site
+    # that hasn't been rebuilt since the patch was applied locally — a
+    # different thing entirely from "the fix didn't work", and reporting
+    # them the same way would be a confident wrong answer.
+    production_changed: bool
