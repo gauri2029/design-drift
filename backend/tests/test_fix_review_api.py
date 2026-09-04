@@ -380,3 +380,93 @@ async def test_applying_without_a_source_checkout_is_refused(tmp_path, monkeypat
 
     assert response.status_code == 409
     assert "no source checkout" in response.json()["detail"]
+
+
+# --- verifying an applied fix ---------------------------------------------
+#
+# The graph itself is covered in test_verification_graph.py. What's gated
+# here is the precondition: verification only means something once a patch
+# was actually written, and it needs the original run's own before-side.
+
+
+async def _seed_applied(tmp_path, monkeypatch, *, applied: bool) -> tuple[str, str]:
+    """A run whose patch was approved and applied (or attempted)."""
+    _checkout(tmp_path, monkeypatch)
+    project_id, analysis_id = await _seed(
+        {"summary": "One patch.", "fixes": [_lang_fix()]}, source_path="marketing-site"
+    )
+    async with async_session_factory() as session:
+        analysis = await session.get(DesignAnalysis, uuid.UUID(analysis_id))
+        assert analysis is not None
+        analysis.fix_application = {
+            "applied_at": "2026-01-04T00:00:00Z",
+            "fixes": [
+                {
+                    "finding_title": "html-has-lang",
+                    "file_path": "index.html",
+                    "applied": applied,
+                    "reason": None if applied else "the code is no longer in the file",
+                }
+            ],
+        }
+        await session.commit()
+    return project_id, analysis_id
+
+
+async def test_verifying_before_applying_is_refused(tmp_path, monkeypatch) -> None:
+    _checkout(tmp_path, monkeypatch)
+    project_id, analysis_id = await _seed(
+        {"summary": "One patch.", "fixes": [_lang_fix()]}, source_path="marketing-site"
+    )
+
+    async with await _client() as client:
+        response = await client.post(
+            f"/api/v1/projects/{project_id}/design-analysis/{analysis_id}/verify"
+        )
+
+    assert response.status_code == 409
+    assert "haven't been applied" in response.json()["detail"]
+
+
+async def test_verifying_when_nothing_was_written_is_refused(tmp_path, monkeypatch) -> None:
+    """An apply where every patch was skipped changed no files, so there is
+    nothing for verification to be about."""
+    project_id, analysis_id = await _seed_applied(tmp_path, monkeypatch, applied=False)
+
+    async with await _client() as client:
+        response = await client.post(
+            f"/api/v1/projects/{project_id}/design-analysis/{analysis_id}/verify"
+        )
+
+    assert response.status_code == 409
+    assert "nothing to verify" in response.json()["detail"]
+
+
+async def test_verifying_a_run_with_no_stored_before_capture_is_refused(
+    tmp_path, monkeypatch
+) -> None:
+    """These rows predate the columns rather than being broken now, so the
+    refusal names the missing piece instead of failing on an assert."""
+    project_id, analysis_id = await _seed_applied(tmp_path, monkeypatch, applied=True)
+
+    async with await _client() as client:
+        response = await client.post(
+            f"/api/v1/projects/{project_id}/design-analysis/{analysis_id}/verify"
+        )
+
+    assert response.status_code == 409
+    assert "no stored production capture" in response.json()["detail"]
+
+
+async def test_verify_rejects_a_non_http_target_url_override(tmp_path, monkeypatch) -> None:
+    """The override exists so a local dev server can be checked; it is not
+    a general-purpose fetch."""
+    project_id, analysis_id = await _seed_applied(tmp_path, monkeypatch, applied=True)
+
+    async with await _client() as client:
+        response = await client.post(
+            f"/api/v1/projects/{project_id}/design-analysis/{analysis_id}/verify",
+            json={"target_url": "file:///etc/passwd"},
+        )
+
+    assert response.status_code == 422

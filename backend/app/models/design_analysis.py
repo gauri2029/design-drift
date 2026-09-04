@@ -83,6 +83,16 @@ class DesignAnalysis(Base):
     # never rewritten: it's a record of an edit that already happened, so a
     # second apply would be a second event, not a correction of this one.
     fix_application: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
+    # The Verification Agent's answer to "did those applied patches
+    # work?" (app.agents.types.VerificationResult), plus the re-capture it
+    # judged from. Null until someone verifies; unlike every column above
+    # it, this is written by a *second* graph run against a page that has
+    # been rebuilt since (see app.graph.verification_workflow), which is
+    # why the screenshots live in their own keys rather than overwriting
+    # the originals — the before/after pair is the point.
+    verification: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
+    verification_screenshot_key: Mapped[str | None] = mapped_column(nullable=True)
+    verification_diff_image_key: Mapped[str | None] = mapped_column(nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

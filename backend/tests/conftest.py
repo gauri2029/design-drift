@@ -163,6 +163,7 @@ AGENT_PROMPT_MARKERS = {
     "accessibility": "You triage a web page's accessibility violations",
     "code_analysis": "You locate the exact source code responsible",
     "fix": "You propose minimal source-code patches",
+    "verification": "You check whether code changes actually fixed",
 }
 
 

@@ -4,6 +4,7 @@ import {
   createDesignAnalysis as createDesignAnalysisRequest,
   fetchDesignAnalyses,
   reviewDesignAnalysisFixes,
+  verifyDesignAnalysis,
   type DesignAnalysis,
   type FixDecisionItem,
 } from '../lib/api'
@@ -18,6 +19,7 @@ interface UseDesignAnalysesResult {
   runAnalysis: () => Promise<void>
   reviewFixes: (analysisId: string, decisions: FixDecisionItem[]) => Promise<void>
   applyFixes: (analysisId: string) => Promise<void>
+  verifyFixes: (analysisId: string, targetUrl?: string) => Promise<void>
 }
 
 export function useDesignAnalyses(projectId: string): UseDesignAnalysesResult {
@@ -79,6 +81,13 @@ export function useDesignAnalyses(projectId: string): UseDesignAnalysesResult {
     [projectId, replaceAnalysis],
   )
 
+  const verifyFixes = useCallback(
+    async (analysisId: string, targetUrl?: string) => {
+      replaceAnalysis(await verifyDesignAnalysis(projectId, analysisId, targetUrl))
+    },
+    [projectId, replaceAnalysis],
+  )
+
   return {
     // The list endpoint returns newest first, so [0] is the latest run.
     latestAnalysis: analyses[0] ?? null,
@@ -88,5 +97,6 @@ export function useDesignAnalyses(projectId: string): UseDesignAnalysesResult {
     runAnalysis,
     reviewFixes,
     applyFixes,
+    verifyFixes,
   }
 }

@@ -9,6 +9,7 @@ from app.agents.types import (
     CodeAnalysisResult,
     DesignAnalysisResult,
     FixResult,
+    VerificationResult,
 )
 from app.integrations.axe.types import AccessibilityReport
 from app.integrations.imaging.types import ComparisonResult
@@ -40,4 +41,9 @@ class DesignAnalysisRead(BaseModel):
     # Null until the approved patches are applied — see
     # app.schemas.fix_application.
     fix_application: FixApplication | None
+    # Null until the applied patches are verified — a second graph run
+    # against the rebuilt page (see app.services.verification).
+    verification: VerificationResult | None
+    verification_screenshot_key: str | None
+    verification_diff_image_key: str | None
     created_at: datetime

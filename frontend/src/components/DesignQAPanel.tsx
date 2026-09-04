@@ -15,6 +15,7 @@ import {
   type VerifiedFix,
 } from '../lib/api'
 import { Badge, type BadgeTone } from './Badge'
+import { VerificationSection } from './VerificationSection'
 import { ZoomableImage } from './ZoomableImage'
 
 interface DesignQAPanelProps {
@@ -30,8 +31,16 @@ interface DesignQAPanelProps {
  * scan section rather than inside it.
  */
 export function DesignQAPanel({ project }: DesignQAPanelProps) {
-  const { latestAnalysis, status, error, running, runAnalysis, reviewFixes, applyFixes } =
-    useDesignAnalyses(project.id)
+  const {
+    latestAnalysis,
+    status,
+    error,
+    running,
+    runAnalysis,
+    reviewFixes,
+    applyFixes,
+    verifyFixes,
+  } = useDesignAnalyses(project.id)
   // runAnalysis rethrows (same convention as useScans/useReviews), so the
   // failure message is held here rather than in the hook.
   const [runError, setRunError] = useState<string | null>(null)
@@ -89,6 +98,7 @@ export function DesignQAPanel({ project }: DesignQAPanelProps) {
           analysis={latestAnalysis}
           onReview={reviewFixes}
           onApply={applyFixes}
+          onVerify={verifyFixes}
         />
       )}
     </section>
@@ -100,11 +110,13 @@ function AnalysisResult({
   analysis,
   onReview,
   onApply,
+  onVerify,
 }: {
   project: Project
   analysis: DesignAnalysis
   onReview: (analysisId: string, decisions: FixDecisionItem[]) => Promise<void>
   onApply: (analysisId: string) => Promise<void>
+  onVerify: (analysisId: string, targetUrl?: string) => Promise<void>
 }) {
   return (
     <div className="space-y-5 rounded-lg border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
@@ -131,6 +143,12 @@ function AnalysisResult({
           onApply={onApply}
         />
       </Section>
+
+      {analysis.fix_application?.fixes.some((fix) => fix.applied) && (
+        <Section title="Verification">
+          <VerificationSection project={project} analysis={analysis} onVerify={onVerify} />
+        </Section>
+      )}
 
       <Section title="Design intent (Figma)">
         <p className="text-sm text-slate-700 dark:text-slate-300">

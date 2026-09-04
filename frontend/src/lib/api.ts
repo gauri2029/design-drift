@@ -370,6 +370,11 @@ export interface DesignAnalysis {
   fix_review: FixReview | null
   // Null until the approved patches are written to the checkout.
   fix_application: FixApplication | null
+  // Null until the applied patches are verified — a second graph run
+  // against the rebuilt page.
+  verification: VerificationResult | null
+  verification_screenshot_key: string | null
+  verification_diff_image_key: string | null
   created_at: string
 }
 
@@ -500,4 +505,64 @@ export async function applyDesignAnalysisFixes(
   }
 
   return (await response.json()) as DesignAnalysis
+}
+
+// Mirrors app/agents/types.py:VerificationResult. Everything below
+// `regressions` is deterministic and ours — the measurements the verdicts
+// have to be read against, not the model's own claims.
+export type VerificationVerdict = 'resolved' | 'unresolved' | 'unclear'
+
+export interface FindingVerification {
+  finding_title: string
+  verdict: VerificationVerdict
+  explanation: string
+}
+
+export interface AccessibilityDelta {
+  resolved_rule_ids: string[]
+  remaining_rule_ids: string[]
+  new_rule_ids: string[]
+}
+
+export interface VerificationResult {
+  summary: string
+  findings: FindingVerification[]
+  regressions: string[]
+  accessibility_delta: AccessibilityDelta
+  mismatch_percentage_before: number
+  mismatch_percentage_after: number
+  // False when the re-captured page was byte-identical to the original —
+  // usually a deployed target that hasn't been rebuilt, which is a very
+  // different thing from a fix that didn't work.
+  production_changed: boolean
+}
+
+export async function verifyDesignAnalysis(
+  projectId: string,
+  analysisId: string,
+  targetUrl?: string,
+): Promise<DesignAnalysis> {
+  const response = await fetch(
+    `${API_BASE_URL}/api/v1/projects/${projectId}/design-analysis/${analysisId}/verify`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ target_url: targetUrl || null }),
+    },
+  )
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { detail?: string } | null
+    throw new Error(body?.detail ?? `Failed to verify the applied fixes (${response.status})`)
+  }
+
+  return (await response.json()) as DesignAnalysis
+}
+
+export function verificationProductionUrl(projectId: string, analysisId: string): string {
+  return `${API_BASE_URL}/api/v1/projects/${projectId}/design-analysis/${analysisId}/verification-production`
+}
+
+export function verificationDiffUrl(projectId: string, analysisId: string): string {
+  return `${API_BASE_URL}/api/v1/projects/${projectId}/design-analysis/${analysisId}/verification-diff`
 }
