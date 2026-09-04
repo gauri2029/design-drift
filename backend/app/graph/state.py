@@ -26,6 +26,7 @@ from app.agents.types import (
 from app.integrations.axe.types import AccessibilityReport
 from app.integrations.imaging.types import ComparisonResult
 from app.integrations.llm.types import VisualReviewResult
+from app.integrations.playwright.dom import DomSnapshot
 
 
 class DesignQAState(BaseModel):
@@ -47,6 +48,11 @@ class DesignQAState(BaseModel):
     target_url: str
     target_selector: str | None = None
     production_screenshot: bytes | None = None
+    # The DOM behind that screenshot, from the same page load. Structured
+    # evidence about the real page for every finding, not just the ones
+    # axe-core happened to flag — see app.tools.anchors on why that
+    # asymmetry mattered.
+    production_dom: DomSnapshot | None = None
 
     # --- Visual Comparison Agent's output ---
     # comparison_result/diff_screenshot are its deterministic tool call

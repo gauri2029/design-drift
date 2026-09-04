@@ -1,9 +1,14 @@
-"""Production Analysis Agent: captures the live production app (see
-docs/architecture.md's runtime-agent table). Unlike Design Analysis, this
-is pure tool use — screenshots are deterministic (docs/principles.md #2:
-"Element geometry, CSS values, navigation, screenshots → Playwright/DOM
-APIs"), so this node never calls an LLM. Judgment about what the capture
-*means* is the Visual Comparison Agent's job.
+"""Production Analysis Agent: captures the live production app — a
+screenshot and the DOM behind it (see docs/architecture.md's runtime-agent
+table). Unlike Design Analysis, this is pure tool use — screenshots,
+element geometry and computed styles are deterministic
+(docs/principles.md #2: "Element geometry, CSS values, navigation,
+screenshots → Playwright/DOM APIs"), so this node never calls an LLM.
+Judgment about what the capture *means* is the Visual Comparison Agent's
+job.
+
+Both halves come from one page load (capture_page), because they have to
+describe the same render.
 
 The capture width tracks the Figma frame's own width (the same
 match_figma rule scans use — see
@@ -25,7 +30,7 @@ from typing import Any
 
 from app.graph.state import DesignQAState
 from app.integrations.playwright.breakpoints import Viewport, match_figma_viewport
-from app.integrations.playwright.capture import capture_screenshot
+from app.integrations.playwright.capture import capture_page
 
 # Used only when the Figma node records no width — rare, since Design
 # Analysis has already run by this point. A capture at a plain desktop
@@ -37,10 +42,10 @@ FALLBACK_VIEWPORT = Viewport(1280, 800)
 async def production_analysis_node(state: DesignQAState) -> dict[str, Any]:
     viewport = match_figma_viewport(state.figma_node) or FALLBACK_VIEWPORT
 
-    screenshot = await capture_screenshot(
+    capture = await capture_page(
         state.target_url,
         selector=state.target_selector,
         viewport_width=viewport.width,
         viewport_height=viewport.height,
     )
-    return {"production_screenshot": screenshot}
+    return {"production_screenshot": capture.screenshot, "production_dom": capture.dom}

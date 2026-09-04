@@ -110,16 +110,23 @@ Caveats against the target table below:
   API decided by our code rather than by the model — which matters when
   those files come from a user-configured path. A real
   search→read→refine loop would locate more, and is the next step up.
-- **Anchor quality is uneven, by design.** Accessibility findings carry a
-  hard link to real DOM, so their anchors are strong. Visual findings are
-  prose about two images, so they yield weaker signals: quoted literals
-  (decoration stripped — a rendered "Links ->" is the word `Links` plus a
-  CSS arrow), title-case section names lifted from unquoted prose
-  ("Schedule of Events"), and the project's target selector. Those two
-  prose-derived kinds rank below DOM evidence deliberately. A finding that
-  offers none of them still returns `no_match` rather than a guess. The
-  real fix remains Production Analysis extracting the DOM alongside its
-  screenshot (still not built).
+- **Visual findings now resolve through the real DOM too.** Production
+  Analysis captures a DOM snapshot alongside its screenshot
+  (`app/integrations/playwright/dom.py`), so what a visual finding *names*
+  gets looked up in what the page actually contained: a finding about a
+  button the model called "Links" yields that element's real id and
+  classes, which is the same class of evidence axe gives an accessibility
+  finding. Before this, only elements axe happened to flag had any element
+  evidence at all, and that asymmetry was the biggest weakness in the
+  retrieval step.
+  The prose-derived kinds still exist and still rank below DOM evidence —
+  quoted literals with decoration stripped (a rendered "Links ->" is the
+  word `Links` plus a CSS arrow) and title-case section names ("Schedule
+  of Events") — because they're what feeds the lookup, and because source
+  often contains the copy even where it contains no id. Matching is exact
+  containment, never fuzzy: a literal appearing on more than five elements
+  is naming none of them and is dropped, and a finding naming nothing on
+  the page still returns `no_match` rather than a guess.
 - **Document-level rules anchor on the element itself.** `html-has-lang`
   and the landmark rules target a bare `<html>`/`<body>`, which carries no
   id or class. A tag anchor (weakest weight, matched as markup so prose
@@ -209,8 +216,16 @@ Caveats against the target table below:
   (`..`, absolute paths, or symlinks pointing out). These files get sent to
   a third-party LLM API, so an unconstrained path would turn a project
   field into arbitrary file read plus exfiltration.
-- **Production Analysis** covers only the "screenshot" half of its planned
-  tool set — no DOM/computed-style extraction yet. It captures at the
+- **Production Analysis** captures a screenshot and the DOM behind it in
+  one page load — they have to describe the same render, since a second
+  load can catch a page in a different state and then a finding drawn from
+  the image would be located using evidence from a page nobody looked at.
+  The snapshot is bounded on purpose (250 elements, a fixed list of
+  design-relevant computed styles): it is prompt budget and search input,
+  not an archive. It keeps elements that carry their own text, are
+  interactive, are landmarks, or were given an id, and drops anything not
+  rendered — an invisible element can't cause a visual difference and its
+  styles would be misleading evidence about one. It captures at the
   Figma frame's own width (`match_figma_viewport`, shared with scans),
   falling back to 1280x800 only when the node records no width: this
   capture exists to be diffed against that render, so a width mismatch
@@ -259,7 +274,7 @@ read/write:
 |---|---|---|
 | Supervisor | Owns workflow state, routes between agents | none (pure routing) |
 | Design Analysis | Interpret Figma structure/styles/intent | Figma REST API, multimodal LLM |
-| Production Analysis | Inspect the real app | Playwright (screenshots ✅, DOM/computed styles not yet built) |
+| Production Analysis | Inspect the real app | Playwright — screenshots ✅, DOM/computed styles ✅ |
 | Visual Comparison | Expected vs. actual → structured drift findings | image diffing ✅, multimodal LLM ✅ |
 | Accessibility | Deterministic a11y violations + AI interpretation | axe-core ✅, LLM (interpretation only) ✅ |
 | Code Analysis | Map findings to exact source locations | repo content search ✅, LLM ✅ |

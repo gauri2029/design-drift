@@ -3,6 +3,7 @@
 import pytest
 
 from app.integrations.axe.types import AccessibilityReport, AxeNode, AxeViolation
+from app.integrations.playwright.dom import DomElement, DomSnapshot
 from app.tools.anchors import Anchor, AnchorKind, extract_anchors
 
 
@@ -224,3 +225,94 @@ def test_phrase_anchors_rank_below_quoted_literals() -> None:
     phrase = Anchor(kind=AnchorKind.PHRASE, value="Schedule of Events")
 
     assert quoted.weight > phrase.weight
+
+
+# --- DOM-backed anchors for visual findings --------------------------------
+#
+# The gap this closed: before the DOM snapshot, a visual finding could only
+# contribute the words in its own prose, while an accessibility finding got
+# real element evidence from axe. These cover the lookup that made those
+# two symmetric.
+
+
+def _element(**overrides) -> DomElement:
+    defaults = {
+        "tag": "a",
+        "element_id": "hero-cta",
+        "classes": ["cta", "button-primary"],
+        "text": "Links",
+        "box": {"x": 0, "y": 0, "width": 100, "height": 40},
+    }
+    return DomElement.model_validate({**defaults, **overrides})
+
+
+def _snapshot(*elements: DomElement) -> DomSnapshot:
+    return DomSnapshot(viewport_width=1400, viewport_height=900, elements=list(elements))
+
+
+def test_a_quoted_literal_resolves_to_the_real_element_behind_it() -> None:
+    """A visual finding naming a button now yields that button's id and
+    classes — the same kind of evidence axe gives an accessibility one."""
+    anchors = extract_anchors(
+        texts=["The hero button label reads 'Links' instead of 'Register Now'."],
+        dom_snapshot=_snapshot(_element()),
+    )
+
+    values = {(anchor.kind.value, anchor.value) for anchor in anchors}
+    assert ("id", "hero-cta") in values
+    assert ("class", "button-primary") in values
+    # The words are still anchors too — source often contains the copy
+    # even when it doesn't contain the id.
+    assert ("text", "Links") in values
+
+
+def test_a_title_case_section_name_resolves_through_the_dom_too() -> None:
+    anchors = extract_anchors(
+        texts=["The Schedule of Events list does not match the design."],
+        dom_snapshot=_snapshot(
+            _element(element_id="schedule", classes=["agenda"], text="Schedule of Events", tag="h2")
+        ),
+    )
+
+    values = {(anchor.kind.value, anchor.value) for anchor in anchors}
+    assert ("id", "schedule") in values
+    assert ("class", "agenda") in values
+
+
+def test_copy_the_page_repeats_is_dropped_rather_than_anchoring_on_all_of_it() -> None:
+    """ "Read more" on seven buttons names none of them; anchoring on every
+    one would drag half the page's markup into the search."""
+    repeated = [
+        _element(element_id=f"more-{index}", classes=["repeated"], text="Read more")
+        for index in range(7)
+    ]
+
+    anchors = extract_anchors(
+        texts=["The 'Read more' links are misaligned."], dom_snapshot=_snapshot(*repeated)
+    )
+
+    assert not any(anchor.kind is AnchorKind.ID for anchor in anchors)
+
+
+def test_a_finding_naming_nothing_on_the_page_still_yields_no_element_anchors() -> None:
+    """No fuzzy matching: either the page contains that copy or it
+    doesn't. Guessing at near-misses is what produces confident noise."""
+    anchors = extract_anchors(
+        texts=["The 'Download the brochure' button is missing."],
+        dom_snapshot=_snapshot(_element()),
+    )
+
+    assert not any(anchor.kind in (AnchorKind.ID, AnchorKind.CLASS) for anchor in anchors)
+
+
+def test_an_accessible_name_matches_where_there_is_no_visible_text() -> None:
+    anchors = extract_anchors(
+        texts=["The 'CNS logo' image is the wrong size."],
+        dom_snapshot=_snapshot(
+            _element(
+                tag="img", element_id="logo", classes=[], text=None, accessible_name="CNS logo"
+            )
+        ),
+    )
+
+    assert ("id", "logo") in {(anchor.kind.value, anchor.value) for anchor in anchors}
