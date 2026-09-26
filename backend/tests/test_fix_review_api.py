@@ -310,9 +310,14 @@ async def test_applying_before_any_review_is_refused(tmp_path, monkeypatch) -> N
     assert (checkout / "index.html").read_text() == before
 
 
-async def test_applying_twice_is_refused(tmp_path, monkeypatch) -> None:
-    """The second call would act on a checkout that has already changed."""
-    _checkout(tmp_path, monkeypatch)
+async def test_re_applying_is_a_no_op_where_the_change_is_already_there(
+    tmp_path, monkeypatch
+) -> None:
+    """Not refused, and not misreported as a failure: applying is
+    repeatable so a reverted checkout can be re-patched, and a patch that
+    already landed has to be distinguishable from one that no longer
+    fits."""
+    checkout = _checkout(tmp_path, monkeypatch)
     project_id, analysis_id = await _seed(
         {"summary": "One patch.", "fixes": [_lang_fix()]}, source_path="marketing-site"
     )
@@ -325,13 +330,42 @@ async def test_applying_twice_is_refused(tmp_path, monkeypatch) -> None:
         first = await client.post(
             f"/api/v1/projects/{project_id}/design-analysis/{analysis_id}/apply"
         )
+        after_first = (checkout / "index.html").read_text()
         second = await client.post(
             f"/api/v1/projects/{project_id}/design-analysis/{analysis_id}/apply"
         )
 
-    assert first.status_code == 200
-    assert second.status_code == 409
-    assert "already been applied" in second.json()["detail"]
+    assert first.json()["fix_application"]["fixes"][0]["applied"] is True
+    assert second.status_code == 200
+    repeated = second.json()["fix_application"]["fixes"][0]
+    assert repeated["applied"] is False
+    assert repeated["reason"] == "this change is already in the file"
+    assert (checkout / "index.html").read_text() == after_first
+
+
+async def test_a_reverted_checkout_can_be_patched_again(tmp_path, monkeypatch) -> None:
+    """The case this exists for: something replaced the file after
+    applying — a revert, a rebuild, a re-copied folder — and the run
+    holding the approved patches has to be able to write them again."""
+    checkout = _checkout(tmp_path, monkeypatch)
+    original = (checkout / "index.html").read_text()
+    project_id, analysis_id = await _seed(
+        {"summary": "One patch.", "fixes": [_lang_fix()]}, source_path="marketing-site"
+    )
+
+    async with await _client() as client:
+        await client.put(
+            _url(project_id, analysis_id),
+            json={"decisions": [{"finding_title": "html-has-lang", "decision": "approved"}]},
+        )
+        await client.post(f"/api/v1/projects/{project_id}/design-analysis/{analysis_id}/apply")
+        (checkout / "index.html").write_text(original, encoding="utf-8")
+        again = await client.post(
+            f"/api/v1/projects/{project_id}/design-analysis/{analysis_id}/apply"
+        )
+
+    assert again.json()["fix_application"]["fixes"][0]["applied"] is True
+    assert '<html lang="en">' in (checkout / "index.html").read_text()
 
 
 async def test_a_patch_that_no_longer_fits_is_reported_not_forced(tmp_path, monkeypatch) -> None:

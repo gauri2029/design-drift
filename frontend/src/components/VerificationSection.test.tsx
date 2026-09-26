@@ -57,7 +57,7 @@ describe('VerificationSection', () => {
     }
 
     const { container } = render(
-      <VerificationSection project={PROJECT} analysis={skipped} onVerify={vi.fn()} />,
+      <VerificationSection project={PROJECT} analysis={skipped} onVerify={vi.fn()} onApply={vi.fn()} />,
     )
 
     expect(container).toBeEmptyDOMElement()
@@ -65,7 +65,7 @@ describe('VerificationSection', () => {
 
   it('verifies against a URL override when one is given', async () => {
     const onVerify = vi.fn().mockResolvedValue(undefined)
-    render(<VerificationSection project={PROJECT} analysis={APPLIED} onVerify={onVerify} />)
+    render(<VerificationSection project={PROJECT} analysis={APPLIED} onVerify={onVerify} onApply={vi.fn()} />)
 
     fireEvent.change(screen.getByLabelText(/url to verify against/i), {
       target: { value: 'http://localhost:4321' },
@@ -77,7 +77,7 @@ describe('VerificationSection', () => {
 
   it('falls back to the project URL when the override is left blank', () => {
     const onVerify = vi.fn().mockResolvedValue(undefined)
-    render(<VerificationSection project={PROJECT} analysis={APPLIED} onVerify={onVerify} />)
+    render(<VerificationSection project={PROJECT} analysis={APPLIED} onVerify={onVerify} onApply={vi.fn()} />)
 
     fireEvent.click(screen.getByRole('button', { name: /verify fixes/i }))
 
@@ -94,6 +94,7 @@ describe('VerificationSection', () => {
           verification_screenshot_key: 'design-analyses/run-1/verification/x-production.png',
         }}
         onVerify={vi.fn()}
+        onApply={vi.fn()}
       />,
     )
 
@@ -113,6 +114,7 @@ describe('VerificationSection', () => {
           verification: { ...RESULT, production_changed: false, findings: [] },
         }}
         onVerify={vi.fn()}
+        onApply={vi.fn()}
       />,
     )
 
@@ -132,6 +134,7 @@ describe('VerificationSection', () => {
           },
         }}
         onVerify={vi.fn()}
+        onApply={vi.fn()}
       />,
     )
 
@@ -139,9 +142,54 @@ describe('VerificationSection', () => {
     expect(screen.getByText(/lost its focus ring/i)).toBeInTheDocument()
   })
 
+  it('offers to re-apply the patches when a fix did not land', async () => {
+    const onApply = vi.fn().mockResolvedValue(undefined)
+    render(
+      <VerificationSection
+        project={PROJECT}
+        analysis={{
+          ...APPLIED,
+          verification: {
+            ...RESULT,
+            findings: [
+              {
+                finding_title: 'html-has-lang',
+                verdict: 'unresolved',
+                explanation: 'axe still reports the rule.',
+              },
+            ],
+          },
+        }}
+        onVerify={vi.fn()}
+        onApply={onApply}
+      />,
+    )
+
+    // The honest next move: the file may have been reverted or rebuilt,
+    // so write the approved patches again and re-check.
+    fireEvent.click(screen.getByRole('button', { name: /re-apply the patches/i }))
+
+    expect(onApply).toHaveBeenCalledWith('run-1')
+  })
+
+  it('does not offer to re-apply once everything is resolved', () => {
+    render(
+      <VerificationSection
+        project={PROJECT}
+        analysis={{ ...APPLIED, verification: RESULT }}
+        onVerify={vi.fn()}
+        onApply={vi.fn()}
+      />,
+    )
+
+    expect(
+      screen.queryByRole('button', { name: /re-apply the patches/i }),
+    ).not.toBeInTheDocument()
+  })
+
   it('surfaces a failed verification run', async () => {
     const onVerify = vi.fn().mockRejectedValue(new Error("this run's patches haven't been applied"))
-    render(<VerificationSection project={PROJECT} analysis={APPLIED} onVerify={onVerify} />)
+    render(<VerificationSection project={PROJECT} analysis={APPLIED} onVerify={onVerify} onApply={vi.fn()} />)
 
     fireEvent.click(screen.getByRole('button', { name: /verify fixes/i }))
 

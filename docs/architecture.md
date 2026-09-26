@@ -110,6 +110,18 @@ Caveats against the target table below:
   API decided by our code rather than by the model — which matters when
   those files come from a user-configured path. A real
   search→read→refine loop would locate more, and is the next step up.
+- **A run reports itself as it happens.** `POST
+  .../design-analysis/stream` is the same run as `POST
+  .../design-analysis`, streamed over SSE: one `node` event per node as it
+  finishes, then one `complete` event carrying the persisted row. Both
+  share the same setup and the same persistence, so streaming changes the
+  waiting and never the result. A run is tens of seconds of browser work
+  and LLM calls, and naming the step in progress is the difference between
+  "this is working" and "this has hung". It's a POST because it starts
+  work, so the browser reads it with `fetch` and a stream reader rather
+  than `EventSource` (GET-only), and failures arrive as an `error` event
+  rather than a status code — by the time a node fails, the 200 was sent
+  long ago. The Supervisor isn't reported: it routes rather than works.
 - **Visual findings now resolve through the real DOM too.** Production
   Analysis captures a DOM snapshot alongside its screenshot
   (`app/integrations/playwright/dom.py`), so what a visual finding *names*
@@ -165,9 +177,15 @@ Caveats against the target table below:
   whole-file search for the same block, and a block appearing twice is
   skipped rather than guessed at. What was and wasn't written is recorded
   per patch (`DesignAnalysis.fix_application`) — an approved patch that no
-  longer fits is reported, never forced. Applying happens once per run; a
-  second attempt is refused rather than re-run against a checkout that has
-  already changed.
+  longer fits is reported, never forced.
+  Applying is repeatable, and has to be: a verification can come back
+  unresolved because the checkout was reverted, a build overwrote it, or
+  someone edited the file, and re-applying the same approved patches is
+  then the right next move. It's safe to repeat precisely because of the
+  re-check — a patch whose change is already present is reported as
+  "already in the file" rather than as a failure, so the two cases stay
+  distinguishable. `fix_application` records the most recent attempt, not
+  a log of all of them.
 - **Verification is a second graph, not more nodes on the first.** It
   runs later, against a page rebuilt since, from inputs the original run
   recorded rather than from anything a node upstream just produced — so it

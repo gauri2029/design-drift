@@ -388,19 +388,6 @@ export async function fetchDesignAnalyses(projectId: string): Promise<DesignAnal
   return (await response.json()) as DesignAnalysis[]
 }
 
-export async function createDesignAnalysis(projectId: string): Promise<DesignAnalysis> {
-  const response = await fetch(`${API_BASE_URL}/api/v1/projects/${projectId}/design-analysis`, {
-    method: 'POST',
-  })
-
-  if (!response.ok) {
-    const body = (await response.json().catch(() => null)) as { detail?: string } | null
-    throw new Error(body?.detail ?? `Failed to run the Design QA workflow (${response.status})`)
-  }
-
-  return (await response.json()) as DesignAnalysis
-}
-
 export function designAnalysisProductionUrl(projectId: string, analysisId: string): string {
   return `${API_BASE_URL}/api/v1/projects/${projectId}/design-analysis/${analysisId}/production`
 }
@@ -565,4 +552,76 @@ export function verificationProductionUrl(projectId: string, analysisId: string)
 
 export function verificationDiffUrl(projectId: string, analysisId: string): string {
   return `${API_BASE_URL}/api/v1/projects/${projectId}/design-analysis/${analysisId}/verification-diff`
+}
+
+export interface WorkflowProgress {
+  node: string
+  label: string
+}
+
+/** Run the workflow, reporting each agent as it finishes.
+ *
+ * Reads the response body incrementally rather than using EventSource,
+ * which is GET-only — and this starts work, so it has to be a POST.
+ *
+ * Failures arrive as an `error` event rather than a status code: by the
+ * time a node fails the response has already begun, so 200 was sent long
+ * ago (see the backend's stream endpoint).
+ */
+export async function streamDesignAnalysis(
+  projectId: string,
+  onProgress: (progress: WorkflowProgress) => void,
+): Promise<DesignAnalysis> {
+  const response = await fetch(
+    `${API_BASE_URL}/api/v1/projects/${projectId}/design-analysis/stream`,
+    { method: 'POST' },
+  )
+
+  if (!response.ok || !response.body) {
+    const body = (await response.json().catch(() => null)) as { detail?: string } | null
+    throw new Error(body?.detail ?? `Failed to run the Design QA workflow (${response.status})`)
+  }
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  let analysis: DesignAnalysis | null = null
+
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+
+    // An SSE frame ends with a blank line; anything after the last one is
+    // a partial frame still arriving, so it stays in the buffer.
+    const frames = buffer.split('\n\n')
+    buffer = frames.pop() ?? ''
+
+    for (const frame of frames) {
+      const event = parseFrame(frame)
+      if (!event) continue
+      if (event.name === 'node') {
+        onProgress(JSON.parse(event.data) as WorkflowProgress)
+      } else if (event.name === 'complete') {
+        analysis = JSON.parse(event.data) as DesignAnalysis
+      } else if (event.name === 'error') {
+        throw new Error((JSON.parse(event.data) as { detail: string }).detail)
+      }
+    }
+  }
+
+  if (!analysis) {
+    throw new Error('The workflow ended without producing a result')
+  }
+  return analysis
+}
+
+function parseFrame(frame: string): { name: string; data: string } | null {
+  let name = ''
+  let data = ''
+  for (const line of frame.split('\n')) {
+    if (line.startsWith('event: ')) name = line.slice(7)
+    else if (line.startsWith('data: ')) data = line.slice(6)
+  }
+  return name && data ? { name, data } : null
 }
