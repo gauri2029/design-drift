@@ -20,6 +20,8 @@ configured (see app.agents.supervisor). The graph shape doesn't encode
 that — the Supervisor's routing does.
 """
 
+from collections.abc import AsyncIterator
+
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
@@ -99,3 +101,34 @@ async def run_design_qa(state: DesignQAState) -> DesignQAState:
     """
     final_state = await design_qa_graph.ainvoke(state)
     return DesignQAState.model_validate(final_state)
+
+
+async def stream_design_qa(state: DesignQAState) -> AsyncIterator[tuple[str, DesignQAState]]:
+    """Yield `(node_name, state_so_far)` as each node finishes.
+
+    Same graph and same result as run_design_qa — this only exposes the
+    steps rather than waiting for all of them. A run launches a browser and
+    makes several LLM calls, so it takes tens of seconds, and a single
+    blocking request spends all of that saying nothing.
+
+    Two stream modes at once: "updates" names the node that just ran (the
+    only place LangGraph reports *which* one it was), and "values" carries
+    the accumulated state, which is what the caller has to persist at the
+    end. Neither alone gives both halves.
+    """
+    latest = state
+    pending: list[str] = []
+
+    async for mode, chunk in design_qa_graph.astream(state, stream_mode=["updates", "values"]):
+        if mode == "updates":
+            # One dict per superstep, keyed by node name. The supervisor is
+            # routing rather than doing work, so it isn't worth reporting.
+            pending.extend(name for name in chunk if name != "supervisor")
+        elif mode == "values":
+            latest = DesignQAState.model_validate(chunk)
+            # Emitted only once the state that goes with them has arrived,
+            # so a consumer never sees a node reported as done before its
+            # output exists.
+            for name in pending:
+                yield name, latest
+            pending.clear()

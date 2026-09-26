@@ -18,6 +18,7 @@ costs real money and launches a real browser per call, so it's an
 explicit action the frontend gates behind a button.
 """
 
+from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID, uuid4
@@ -28,7 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.agents.types import Patch
 from app.core.config import get_settings
 from app.graph.state import DesignQAState
-from app.graph.workflow import run_design_qa
+from app.graph.workflow import run_design_qa, stream_design_qa
 from app.integrations.storage.base import StorageBackend
 from app.models.design_analysis import DesignAnalysis
 from app.models.project import Project
@@ -46,8 +47,8 @@ class FixApplicationError(Exception):
     """Raised when approved patches can't be applied to the checkout.
 
     Like FixReviewError, every case is about the state of this run or its
-    project — not reviewed, already applied, no checkout configured — so
-    the router surfaces it as a 409.
+    project — nothing approved, no checkout configured — so the router
+    surfaces it as a 409.
     """
 
 
@@ -64,12 +65,37 @@ class FixReviewError(Exception):
 async def create_design_analysis(
     db: AsyncSession, project: Project, storage: StorageBackend
 ) -> DesignAnalysis:
+    final_state = await run_design_qa(_initial_state(project, storage))
+    return await _persist(db, project, storage, final_state)
+
+
+async def stream_design_analysis(
+    db: AsyncSession, project: Project, storage: StorageBackend
+) -> AsyncIterator[str | DesignAnalysis]:
+    """The same run as create_design_analysis, reported as it happens.
+
+    Yields each node's name as it finishes, then the persisted row. The
+    setup and the persistence are shared with create_design_analysis, so
+    the two can't drift into producing different results — only the
+    waiting differs.
+    """
+    initial_state = _initial_state(project, storage)
+    final_state = initial_state
+
+    async for node, state_so_far in stream_design_qa(initial_state):
+        final_state = state_so_far
+        yield node
+
+    yield await _persist(db, project, storage, final_state)
+
+
+def _initial_state(project: Project, storage: StorageBackend) -> DesignQAState:
     if project.figma_screenshot_key is None:
         raise ProjectNotAnalyzableError(
             "project has no Figma screenshot yet (registration may have failed)"
         )
 
-    initial_state = DesignQAState(
+    return DesignQAState(
         project_id=project.id,
         figma_node=project.figma_data or {},
         figma_screenshot=storage.read(project.figma_screenshot_key),
@@ -81,8 +107,11 @@ async def create_design_analysis(
         # user-supplied path themselves.
         source_root=_resolve_source_root(project),
     )
-    final_state = await run_design_qa(initial_state)
 
+
+async def _persist(
+    db: AsyncSession, project: Project, storage: StorageBackend, final_state: DesignQAState
+) -> DesignAnalysis:
     if final_state.error is not None:
         raise ProjectNotAnalyzableError(final_state.error)
     # All guaranteed by route_after_supervisor: it only routes to END once
@@ -212,14 +241,16 @@ async def apply_fix_review(
     commit, no push (docs/principles.md #5). The user's own version
     control is what makes this safe to undo, so it stays theirs to drive.
 
-    Applied once. A run records what a single act of applying did; running
-    it again would be a second event against a checkout that has already
-    changed, and re-deriving it from the same stale snippets is not what
-    anyone wants — re-run the workflow instead.
+    Repeatable, and it has to be: a verification can come back unresolved
+    because the checkout was reverted, a build overwrote it, or someone
+    edited the file — and then re-applying the same approved patches is
+    exactly the right next move. Safe to repeat because every patch is
+    re-checked at write time (app.tools.apply_patch): where the change is
+    already present it's a no-op, where the surrounding code has moved on
+    it's skipped, and only where it genuinely fits is anything written.
+    `fix_application` therefore records the most recent attempt, not the
+    only one.
     """
-    if analysis.fix_application is not None:
-        raise FixApplicationError("this run's approved patches have already been applied")
-
     approved = _approved_titles(analysis.fix_review)
     if not approved:
         raise FixApplicationError("no patches on this run have been approved yet")

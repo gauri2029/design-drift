@@ -1,6 +1,9 @@
+import json
+from collections.abc import AsyncIterator
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
@@ -228,4 +231,74 @@ async def get_verification_diff_image(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="verification not found")
     return Response(
         content=storage.read(analysis.verification_diff_image_key), media_type="image/png"
+    )
+
+
+# What each graph node is called in a progress display. Kept here rather
+# than in the nodes: it's presentation, and the node names themselves are
+# the workflow's own vocabulary (see app.agents.supervisor).
+NODE_LABELS = {
+    "design_analysis": "Reading the Figma design",
+    "production_analysis": "Capturing production",
+    "visual_comparison": "Comparing design to production",
+    "accessibility": "Checking accessibility",
+    "aggregate_findings": "Merging findings",
+    "code_analysis": "Locating the code behind them",
+    "fix": "Proposing fixes",
+}
+
+
+def _sse(event: str, data: dict[str, object]) -> str:
+    return f"event: {event}\ndata: {json.dumps(data)}\n\n"
+
+
+@router.post("/stream")
+async def stream_design_analysis(
+    project_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    storage: StorageBackend = Depends(get_storage_backend),
+) -> StreamingResponse:
+    """The same run as POST "", streamed as it happens.
+
+    A run launches a browser and makes several LLM calls, so it takes tens
+    of seconds; the plain endpoint spends all of that saying nothing. Both
+    are kept — this one needs a client that can read a response body
+    incrementally, and the plain one stays the simpler thing to call from
+    a script or curl.
+
+    POST rather than GET because it starts work; a browser reads it with
+    fetch + a stream reader rather than EventSource, which is GET-only.
+
+    Failures arrive as an `error` event, not a status code: by the time a
+    node fails the response has already begun, so the status is long
+    since sent. The client has to read errors off the stream.
+    """
+
+    project = await _get_project_or_404(project_id, db)
+
+    async def events() -> AsyncIterator[str]:
+        try:
+            async for item in design_analysis_service.stream_design_analysis(db, project, storage):
+                if isinstance(item, str):
+                    yield _sse("node", {"node": item, "label": NODE_LABELS.get(item, item)})
+                else:
+                    yield _sse(
+                        "complete",
+                        DesignAnalysisRead.model_validate(item).model_dump(mode="json"),
+                    )
+        except (
+            ProjectNotAnalyzableError,
+            SourceNotAccessibleError,
+            LLMNotConfiguredError,
+            LLMResponseError,
+            PlaywrightCaptureError,
+            AccessibilityScanError,
+        ) as exc:
+            yield _sse("error", {"detail": str(exc)})
+
+    return StreamingResponse(
+        events(),
+        media_type="text/event-stream",
+        # Proxies that buffer would defeat the point of streaming at all.
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

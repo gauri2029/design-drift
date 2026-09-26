@@ -9,6 +9,7 @@ import {
   type FindingLocation,
   type AppliedFix,
   type FindingPriority,
+  type WorkflowProgress,
   type FixDecision,
   type FixDecisionItem,
   type Project,
@@ -36,6 +37,7 @@ export function DesignQAPanel({ project }: DesignQAPanelProps) {
     status,
     error,
     running,
+    progress,
     runAnalysis,
     reviewFixes,
     applyFixes,
@@ -80,6 +82,8 @@ export function DesignQAPanel({ project }: DesignQAPanelProps) {
       {status === 'loading' && (
         <p className="text-sm text-slate-500 dark:text-slate-400">Loading…</p>
       )}
+
+      {running && <WorkflowProgressList progress={progress} />}
       {(error || runError) && (
         <p role="alert" className="text-sm text-red-600 dark:text-red-400">
           {runError ?? error}
@@ -102,6 +106,36 @@ export function DesignQAPanel({ project }: DesignQAPanelProps) {
         />
       )}
     </section>
+  )
+}
+
+/** Which agents have finished so far.
+ *
+ * A run is tens of seconds of browser work and LLM calls. Naming the step
+ * in progress is the difference between "this is working" and "this has
+ * hung", which a spinner alone can't tell you.
+ */
+function WorkflowProgressList({ progress }: { progress: WorkflowProgress[] }) {
+  return (
+    <ol className="space-y-1 rounded-lg border border-slate-200 p-4 dark:border-slate-800">
+      {progress.map((step) => (
+        <li
+          key={step.node}
+          className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400"
+        >
+          <span aria-hidden className="text-emerald-600 dark:text-emerald-400">
+            ✓
+          </span>
+          {step.label}
+        </li>
+      ))}
+      <li className="flex items-center gap-2 text-sm text-slate-900 dark:text-slate-100">
+        <span aria-hidden className="animate-pulse text-indigo-600 dark:text-indigo-400">
+          •
+        </span>
+        {progress.length === 0 ? 'Starting the workflow…' : 'Working…'}
+      </li>
+    </ol>
   )
 }
 
@@ -146,7 +180,12 @@ function AnalysisResult({
 
       {analysis.fix_application?.fixes.some((fix) => fix.applied) && (
         <Section title="Verification">
-          <VerificationSection project={project} analysis={analysis} onVerify={onVerify} />
+          <VerificationSection
+            project={project}
+            analysis={analysis}
+            onVerify={onVerify}
+            onApply={onApply}
+          />
         </Section>
       )}
 
@@ -365,10 +404,7 @@ function FixProposal({
           onSave={() => void save()}
           application={analysis.fix_application}
           applying={applying}
-          canApply={
-            analysis.fix_application === null &&
-            (review?.decisions ?? []).some((item) => item.decision === 'approved')
-          }
+          canApply={(review?.decisions ?? []).some((item) => item.decision === 'approved')}
           onApply={() => void apply()}
         />
       )}
@@ -431,18 +467,18 @@ function ReviewBar({
         {!application && pendingCount > 0 && ` · ${pendingCount} undecided`}
       </p>
       <div className="flex items-center gap-2">
-        {!application && (
-          <button
-            type="button"
-            onClick={onSave}
-            disabled={saving || disabled}
-            className="rounded-md border border-slate-300 px-3 py-1 text-xs font-medium text-slate-700 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-900"
-          >
-            {saving ? 'Saving…' : review ? 'Update review' : 'Save review'}
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={onSave}
+          disabled={saving || disabled}
+          className="rounded-md border border-slate-300 px-3 py-1 text-xs font-medium text-slate-700 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-900"
+        >
+          {saving ? 'Saving…' : review ? 'Update review' : 'Save review'}
+        </button>
         {/* Only offered once a saved review actually contains an approval —
-            applying is the one action here that changes the user's files. */}
+            applying is the one action here that changes the user's files.
+            Repeatable on purpose: a checkout can be reverted or rebuilt
+            between attempts, and each patch is re-checked when written. */}
         {canApply && (
           <button
             type="button"
@@ -450,7 +486,11 @@ function ReviewBar({
             disabled={applying}
             className="rounded-md bg-emerald-600 px-3 py-1 text-xs font-medium text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {applying ? 'Applying…' : 'Apply approved fixes'}
+            {applying
+              ? 'Applying…'
+              : application
+                ? 'Re-apply approved fixes'
+                : 'Apply approved fixes'}
           </button>
         )}
       </div>
@@ -516,9 +556,7 @@ function FixItem({
         <p className="mt-1 text-xs text-red-600 dark:text-red-400">{applied.reason}</p>
       )}
 
-      {/* Once applied, the decision is history — re-deciding it would
-          promise something this run can no longer do. */}
-      {!applied && !fix.no_fix && fix.patch && (
+      {!fix.no_fix && fix.patch && (
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <DecisionButton
             label="Approve"

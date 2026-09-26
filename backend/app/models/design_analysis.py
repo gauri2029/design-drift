@@ -78,10 +78,12 @@ class DesignAnalysis(Base):
     # rather than appended to, since a reviewer changing their mind should
     # leave one current answer, not two.
     fix_review: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
-    # What was actually written to the checkout when those approvals were
-    # acted on (app.schemas.fix_application.FixApplication). Set once and
-    # never rewritten: it's a record of an edit that already happened, so a
-    # second apply would be a second event, not a correction of this one.
+    # What was written to the checkout the last time those approvals were
+    # acted on (app.schemas.fix_application.FixApplication). Overwritten on
+    # a re-apply rather than appended to: applying is repeatable (a
+    # checkout can be reverted or rebuilt between attempts), and what
+    # matters is the current state of those patches against the current
+    # file, not a log of every attempt.
     fix_application: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
     # The Verification Agent's answer to "did those applied patches
     # work?" (app.agents.types.VerificationResult), plus the re-capture it

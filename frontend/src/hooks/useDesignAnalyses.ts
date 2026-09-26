@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
   applyDesignAnalysisFixes,
-  createDesignAnalysis as createDesignAnalysisRequest,
   fetchDesignAnalyses,
+  streamDesignAnalysis,
   reviewDesignAnalysisFixes,
   verifyDesignAnalysis,
   type DesignAnalysis,
   type FixDecisionItem,
+  type WorkflowProgress,
 } from '../lib/api'
 
 type Status = 'loading' | 'ready' | 'error'
@@ -16,6 +17,8 @@ interface UseDesignAnalysesResult {
   status: Status
   error: string | null
   running: boolean
+  // What the workflow is doing right now, newest last. Empty when idle.
+  progress: WorkflowProgress[]
   runAnalysis: () => Promise<void>
   reviewFixes: (analysisId: string, decisions: FixDecisionItem[]) => Promise<void>
   applyFixes: (analysisId: string) => Promise<void>
@@ -29,6 +32,7 @@ export function useDesignAnalyses(projectId: string): UseDesignAnalysesResult {
   const [status, setStatus] = useState<Status>('loading')
   const [error, setError] = useState<string | null>(null)
   const [running, setRunning] = useState(false)
+  const [progress, setProgress] = useState<WorkflowProgress[]>([])
 
   useEffect(() => {
     let cancelled = false
@@ -52,8 +56,11 @@ export function useDesignAnalyses(projectId: string): UseDesignAnalysesResult {
 
   const runAnalysis = useCallback(async () => {
     setRunning(true)
+    setProgress([])
     try {
-      const analysis = await createDesignAnalysisRequest(projectId)
+      const analysis = await streamDesignAnalysis(projectId, (step) =>
+        setProgress((current) => [...current, step]),
+      )
       setAnalyses((current) => [analysis, ...current])
       setError(null)
     } finally {
@@ -94,6 +101,7 @@ export function useDesignAnalyses(projectId: string): UseDesignAnalysesResult {
     status,
     error,
     running,
+    progress,
     runAnalysis,
     reviewFixes,
     applyFixes,

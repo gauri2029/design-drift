@@ -14,6 +14,7 @@ interface VerificationSectionProps {
   project: Project
   analysis: DesignAnalysis
   onVerify: (analysisId: string, targetUrl?: string) => Promise<void>
+  onApply: (analysisId: string) => Promise<void>
 }
 
 /** "Did those applied patches actually work?" — the last step of the
@@ -23,9 +24,15 @@ interface VerificationSectionProps {
  * hidden until then rather than showing a disabled control with no
  * explanation.
  */
-export function VerificationSection({ project, analysis, onVerify }: VerificationSectionProps) {
+export function VerificationSection({
+  project,
+  analysis,
+  onVerify,
+  onApply,
+}: VerificationSectionProps) {
   const [targetUrl, setTargetUrl] = useState('')
   const [verifying, setVerifying] = useState(false)
+  const [reapplying, setReapplying] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   if (!analysis.fix_application?.fixes.some((fix) => fix.applied)) {
@@ -41,6 +48,22 @@ export function VerificationSection({ project, analysis, onVerify }: Verificatio
       setError(err instanceof Error ? err.message : 'Failed to verify the applied fixes')
     } finally {
       setVerifying(false)
+    }
+  }
+
+  const unresolved = (analysis.verification?.findings ?? []).some(
+    (finding) => finding.verdict !== 'resolved',
+  )
+
+  const reapply = async () => {
+    setReapplying(true)
+    setError(null)
+    try {
+      await onApply(analysis.id)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to re-apply the patches')
+    } finally {
+      setReapplying(false)
     }
   }
 
@@ -67,11 +90,25 @@ export function VerificationSection({ project, analysis, onVerify }: Verificatio
         <button
           type="button"
           onClick={() => void verify()}
-          disabled={verifying}
+          disabled={verifying || reapplying}
           className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {verifying ? 'Verifying…' : analysis.verification ? 'Verify again' : 'Verify fixes'}
         </button>
+        {/* The honest next move when a fix didn't land: the file may have
+            been reverted or rebuilt since, so write the approved patches
+            again and re-check. Each one is re-verified as it's written, so
+            a patch already in place is a no-op rather than a duplicate. */}
+        {unresolved && (
+          <button
+            type="button"
+            onClick={() => void reapply()}
+            disabled={verifying || reapplying}
+            className="rounded-md border border-emerald-600 px-3 py-1.5 text-sm font-medium text-emerald-700 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50 dark:text-emerald-400 dark:hover:bg-emerald-950/40"
+          >
+            {reapplying ? 'Re-applying…' : 'Re-apply the patches'}
+          </button>
+        )}
       </div>
 
       {error && (

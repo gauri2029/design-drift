@@ -91,13 +91,31 @@ def _locate(lines: list[str], patch: Patch) -> tuple[int, int] | None:
     return matches[0] if len(matches) == 1 else None
 
 
+def _already_applied(lines: list[str], patch: Patch) -> bool:
+    """Whether this patch's replacement is already in the file.
+
+    Only ever asked once `_locate` has failed, which makes it the right
+    question: the original code isn't there, so either someone changed it
+    or we already changed it, and those two deserve different answers.
+    Reporting "the code this patch replaces is no longer in the file" for a
+    patch that simply landed earlier is true and useless.
+    """
+    wanted = _normalize(patch.replacement_code.splitlines())
+    if not wanted:
+        return False
+    return wanted in _normalize(lines)
+
+
 def apply_patches(root: Path, patches: list[tuple[str, Patch]]) -> dict[str, PatchOutcome]:
     """Apply approved patches to files under `root`, keyed by finding title.
 
     Every patch is re-checked against the file as it is *now*, not as it
     was during the run: a reviewer may have approved hours ago, and the
     file is theirs to edit in the meantime. A patch whose original code
-    has since moved or changed is skipped, not forced.
+    has since moved or changed is skipped, not forced, and one whose
+    change is already present is reported as such rather than as a
+    failure. That's what makes calling this again safe: re-applying is a
+    no-op where the work is done, and writes again where it isn't.
 
     Patches to the same file are applied bottom-up so that splicing one
     doesn't shift the line numbers of the ones above it, and each file is
@@ -132,7 +150,11 @@ def apply_patches(root: Path, patches: list[tuple[str, Patch]]) -> dict[str, Pat
             if span is None:
                 outcomes[title] = PatchOutcome(
                     applied=False,
-                    reason="the code this patch replaces is no longer in the file at that place",
+                    reason=(
+                        "this change is already in the file"
+                        if _already_applied(lines, patch)
+                        else "the code this patch replaces is no longer in the file at that place"
+                    ),
                 )
                 continue
             start, end = span

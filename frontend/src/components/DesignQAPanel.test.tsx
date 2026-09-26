@@ -99,6 +99,22 @@ const APPROVED = {
   },
 }
 
+/** An SSE response body, as the backend's stream endpoint sends it. */
+function sseResponse(frames: Array<[string, unknown]>) {
+  const encoder = new TextEncoder()
+  return {
+    ok: true,
+    body: new ReadableStream({
+      start(controller) {
+        for (const [event, data] of frames) {
+          controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`))
+        }
+        controller.close()
+      },
+    }),
+  }
+}
+
 function stubFetch(handler: (url: string, method: string) => unknown) {
   vi.stubGlobal(
     'fetch',
@@ -119,8 +135,11 @@ describe('DesignQAPanel', () => {
       if (url.endsWith('/design-analysis') && method === 'GET') {
         return { ok: true, json: async () => [] }
       }
-      if (url.endsWith('/design-analysis') && method === 'POST') {
-        return { ok: true, json: async () => ANALYSIS }
+      if (url.endsWith('/design-analysis/stream') && method === 'POST') {
+        return sseResponse([
+          ['node', { node: 'design_analysis', label: 'Reading the Figma design' }],
+          ['complete', ANALYSIS],
+        ])
       }
       throw new Error(`Unexpected fetch: ${method} ${url}`)
     })
@@ -285,10 +304,9 @@ describe('DesignQAPanel', () => {
 
     expect(await screen.findByText(/^applied /i)).toBeInTheDocument()
     expect(screen.getByText(/written to file/i)).toBeInTheDocument()
-    // Applying is done; re-deciding it would promise something this run
-    // can no longer do.
-    expect(screen.queryByRole('button', { name: /approve/i })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /apply approved fixes/i })).not.toBeInTheDocument()
+    // Applying is repeatable: a checkout can be reverted or rebuilt
+    // between attempts, so the offer stays — relabelled.
+    expect(screen.getByRole('button', { name: /re-apply approved fixes/i })).toBeInTheDocument()
   })
 
   it('does not offer to apply an unreviewed run', async () => {
@@ -376,12 +394,10 @@ describe('DesignQAPanel', () => {
       if (url.endsWith('/design-analysis') && method === 'GET') {
         return { ok: true, json: async () => [] }
       }
-      if (url.endsWith('/design-analysis') && method === 'POST') {
-        return {
-          ok: false,
-          status: 502,
-          json: async () => ({ detail: 'GEMINI_API_KEY is not configured' }),
-        }
+      if (url.endsWith('/design-analysis/stream') && method === 'POST') {
+        // Not a status code: by the time a node fails the response has
+        // already begun, so the failure has to come down the stream.
+        return sseResponse([['error', { detail: 'GEMINI_API_KEY is not configured' }]])
       }
       throw new Error(`Unexpected fetch: ${method} ${url}`)
     })
@@ -392,5 +408,52 @@ describe('DesignQAPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: /run design qa/i }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent('GEMINI_API_KEY is not configured')
+  })
+
+  it('names each agent as it finishes while the run is in flight', async () => {
+    let release: (() => void) | undefined
+    const encoder = new TextEncoder()
+    stubFetch((url, method) => {
+      if (url.endsWith('/design-analysis') && method === 'GET') {
+        return { ok: true, json: async () => [] }
+      }
+      if (url.endsWith('/design-analysis/stream') && method === 'POST') {
+        return {
+          ok: true,
+          body: new ReadableStream({
+            start(controller) {
+              controller.enqueue(
+                encoder.encode(
+                  'event: node\ndata: {"node":"design_analysis","label":"Reading the Figma design"}\n\n',
+                ),
+              )
+              // Held open, so the assertions below run against a workflow
+              // that is genuinely still going.
+              release = () => {
+                controller.enqueue(
+                  encoder.encode(`event: complete\ndata: ${JSON.stringify(ANALYSIS)}\n\n`),
+                )
+                controller.close()
+              }
+            },
+          }),
+        }
+      }
+      throw new Error(`Unexpected fetch: ${method} ${url}`)
+    })
+
+    render(<DesignQAPanel project={PROJECT} />)
+    await screen.findByText(/no workflow run yet/i)
+
+    fireEvent.click(screen.getByRole('button', { name: /run design qa/i }))
+
+    expect(await screen.findByText('Reading the Figma design')).toBeInTheDocument()
+    expect(screen.getByText(/working/i)).toBeInTheDocument()
+
+    release?.()
+
+    // Progress gives way to the result once the run is done.
+    expect(await screen.findAllByText('color-contrast')).toHaveLength(3)
+    expect(screen.queryByText(/working/i)).not.toBeInTheDocument()
   })
 })

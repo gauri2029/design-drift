@@ -417,3 +417,90 @@ async def test_design_analysis_returns_409_for_a_source_path_outside_the_root(
     assert response.status_code == 409
     assert "outside" in response.json()["detail"]
     assert anthropic_route.call_count == 0
+
+
+@respx.mock
+async def test_streaming_a_run_reports_each_node_then_the_saved_row(
+    monkeypatch, tmp_path, fixture_server
+) -> None:
+    """Same run as POST "", reported as it happens — a run takes tens of
+    seconds and the plain endpoint spends all of it saying nothing."""
+    monkeypatch.setattr(get_settings(), "figma_access_token", "test-figma-token")
+    monkeypatch.setattr(get_settings(), "anthropic_api_key", "test-anthropic-key")
+    app.dependency_overrides[get_storage_backend] = lambda: LocalStorageBackend(root=tmp_path)
+
+    _mock_figma(_png_bytes((1400, 900), (255, 255, 255)))
+    mock_anthropic_by_agent(
+        {
+            "design_analysis": ANALYSIS_RESULT,
+            "visual_comparison": VISUAL_COMPARISON_RESULT,
+            "accessibility": ACCESSIBILITY_INTERPRETATION,
+        }
+    )
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        project_id = await _create_project(client, fixture_server)
+        async with client.stream(
+            "POST", f"/api/v1/projects/{project_id}/design-analysis/stream"
+        ) as response:
+            assert response.status_code == 200
+            assert response.headers["content-type"].startswith("text/event-stream")
+            body = "".join([chunk async for chunk in response.aiter_text()])
+
+    events = _parse_sse(body)
+    nodes = [json.loads(data)["node"] for name, data in events if name == "node"]
+    # Every inspection node, in workflow order. The supervisor routes
+    # rather than works, so it isn't reported.
+    assert nodes[:5] == [
+        "design_analysis",
+        "production_analysis",
+        "visual_comparison",
+        "accessibility",
+        "aggregate_findings",
+    ]
+    assert "supervisor" not in nodes
+
+    completed = [data for name, data in events if name == "complete"]
+    assert len(completed) == 1
+    # The run is persisted the same way the plain endpoint persists it —
+    # streaming changes the waiting, not the result.
+    analysis_id = json.loads(completed[0])["id"]
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        listed = await client.get(f"/api/v1/projects/{project_id}/design-analysis")
+    assert [analysis["id"] for analysis in listed.json()] == [analysis_id]
+
+
+@respx.mock
+async def test_a_streamed_failure_arrives_as_an_event_not_a_status_code(
+    monkeypatch, tmp_path, fixture_server
+) -> None:
+    """By the time a node fails the response has already begun, so 200 is
+    long since sent — a client has to read errors off the stream."""
+    monkeypatch.setattr(get_settings(), "figma_access_token", "test-figma-token")
+    monkeypatch.setattr(get_settings(), "anthropic_api_key", None)
+    app.dependency_overrides[get_storage_backend] = lambda: LocalStorageBackend(root=tmp_path)
+
+    _mock_figma(_png_bytes((1400, 900), (255, 255, 255)))
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        project_id = await _create_project(client, fixture_server)
+        async with client.stream(
+            "POST", f"/api/v1/projects/{project_id}/design-analysis/stream"
+        ) as response:
+            assert response.status_code == 200
+            body = "".join([chunk async for chunk in response.aiter_text()])
+
+    events = _parse_sse(body)
+    assert [name for name, _ in events] == ["error"]
+    assert "not configured" in json.loads(events[0][1])["detail"]
+
+
+def _parse_sse(body: str) -> list[tuple[str, str]]:
+    events: list[tuple[str, str]] = []
+    for block in body.strip().split("\n\n"):
+        lines = dict(line.split(": ", 1) for line in block.splitlines() if ": " in line)
+        if "event" in lines:
+            events.append((lines["event"], lines["data"]))
+    return events
