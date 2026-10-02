@@ -224,7 +224,7 @@ def search_corpus(corpus: SourceCorpus, anchors: Sequence[Anchor]) -> list[Candi
         if not kept:
             continue
 
-        line_start, line_end = _best_region(kept, len(corpus[path]))
+        line_start, line_end = _best_region(kept, len(corpus[path]), anchors)
         candidates.append(
             CandidateMatch(
                 path=path,
@@ -236,18 +236,52 @@ def search_corpus(corpus: SourceCorpus, anchors: Sequence[Anchor]) -> list[Candi
             )
         )
 
-    candidates.sort(key=lambda candidate: (-candidate.score, candidate.path))
+    candidates.sort(
+        key=lambda candidate: (-candidate.score, _kind_rank(candidate.path), candidate.path)
+    )
     return candidates[:MAX_CANDIDATES]
 
 
-def _best_region(matches: dict[int, list[int]], total_lines: int) -> tuple[int, int]:
-    """Centre the snippet on the line carrying the most distinct anchors."""
-    per_line: Counter[int] = Counter()
-    for lines in matches.values():
-        for number in set(lines):
-            per_line[number] += 1
+# Tie-break order by file kind. A class name appearing once in the markup
+# and once in a stylesheet is a tie on score, and alphabetical order then
+# decides it — which put `index.css` ahead of `index.html` for every such
+# finding. Markup first is the right default: a finding is about an
+# element, and the element is declared in markup, while the stylesheet only
+# describes it. Not a score bonus, only a tiebreak, so real evidence in a
+# stylesheet still outranks weak evidence in markup.
+_MARKUP_EXTENSIONS = frozenset({".html", ".astro", ".svelte", ".vue", ".jsx", ".tsx"})
+_STYLE_EXTENSIONS = frozenset({".css", ".scss", ".sass", ".less"})
 
-    # Most anchors wins; earliest line breaks ties, so output is stable.
+
+def _kind_rank(path: str) -> int:
+    suffix = Path(path).suffix.lower()
+    if suffix in _MARKUP_EXTENSIONS:
+        return 0
+    if suffix in _STYLE_EXTENSIONS:
+        return 2
+    return 1
+
+
+def _best_region(
+    matches: dict[int, list[int]], total_lines: int, anchors: Sequence[Anchor]
+) -> tuple[int, int]:
+    """Centre the snippet on the line carrying the strongest anchor evidence.
+
+    Weighted by anchor, not just counted. Counting alone picks the earliest
+    line when several carry one anchor each, which quietly discards the
+    thing anchor weights exist to express: a line holding an id is better
+    evidence than a line holding one word of body copy. The eval harness
+    caught this — a finding about a button labelled "Links" was located at
+    the unrelated line matching "Register Now", because both lines had
+    exactly one anchor and the wrong one came first in the file.
+    """
+    per_line: Counter[int] = Counter()
+    for index, lines in matches.items():
+        for number in set(lines):
+            per_line[number] += anchors[index].weight
+
+    # Strongest evidence wins; earliest line breaks genuine ties, so output
+    # stays deterministic.
     best_line = min(per_line, key=lambda number: (-per_line[number], number))
     return (
         max(1, best_line - SNIPPET_LINES_BEFORE),

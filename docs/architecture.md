@@ -56,7 +56,7 @@ backend/app/
 ├── graph/        LangGraph graph definition/state   (Design QA + verification graphs built — Phase 3)
 ├── tools/        Agent tool implementations          (repo_search, anchors, apply_patch built — Phase 3)
 ├── integrations/ Figma, Playwright, axe-core clients  (not yet built — Phase 1+)
-└── evals/        AI evaluation harness                (not yet built — Phase 8)
+└── evals/        AI evaluation harness                (retrieval evals built — Phase 8)
 ```
 
 We are deliberately **not** creating `repositories/` as a separate
@@ -110,6 +110,27 @@ Caveats against the target table below:
   API decided by our code rather than by the model — which matters when
   those files come from a user-configured path. A real
   search→read→refine loop would locate more, and is the next step up.
+- **Retrieval is measured, not eyeballed.** `app/evals/` scores the Code
+  Analysis path against hand-verified answers over committed fixtures
+  (`uv run python -m app.evals.retrieval --search-only`, which needs no LLM
+  and no key, so it runs in CI). Scoring is deterministic — a location is
+  right or wrong against a known answer, so no judge model is involved,
+  which also keeps the harness free of the thing it measures. Outcomes are
+  finer than pass/fail because they call for different fixes: `wrong_file`
+  is a ranking problem, `wrong_lines` is the model misreading a snippet it
+  was shown, and `missed` (an honest `no_match`) is tracked apart from
+  `false_positive` because the cost to a developer differs. Ranges are
+  scored by overlap, not equality, since the expected range is one person's
+  bracketing of "the responsible code".
+  It found three ranking bugs on its first run, none of which the unit
+  tests could see because each component behaved exactly as written: line
+  regions ignored anchor weight, the same string counted twice when two
+  rules both extracted it, and stylesheets outranked markup on an
+  alphabetical tie. 5/7 → 7/7 after fixing them.
+  The deterministic and full-path scores are both reported and the gap
+  between them is the point — a case where the search ranks a component
+  above the stylesheet that actually sets a colour is the LLM's to resolve,
+  not a retrieval bug.
 - **A run reports itself as it happens.** `POST
   .../design-analysis/stream` is the same run as `POST
   .../design-analysis`, streamed over SSE: one `node` event per node as it
