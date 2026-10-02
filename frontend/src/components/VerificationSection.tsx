@@ -149,6 +149,16 @@ function VerificationReport({
 
       <Measurements result={result} />
 
+      {/* What was actually compared. Verification refuses a genuine page
+          mismatch, but a local server standing in for the deployed site is
+          allowed, and a reader should still see that's what happened. */}
+      {analysis.verification_target_url && (
+        <p className="text-xs text-slate-500 dark:text-slate-500">
+          Compared <code>{analysis.target_url ?? project.target_url}</code> (before) against{' '}
+          <code>{analysis.verification_target_url}</code> (after).
+        </p>
+      )}
+
       {result.findings.length > 0 && (
         <ul className="space-y-2">
           {result.findings.map((finding, index) => (

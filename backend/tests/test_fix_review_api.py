@@ -432,6 +432,7 @@ async def _seed_applied(tmp_path, monkeypatch, *, applied: bool) -> tuple[str, s
     async with async_session_factory() as session:
         analysis = await session.get(DesignAnalysis, uuid.UUID(analysis_id))
         assert analysis is not None
+        analysis.target_url = "https://cns-iu.github.io/workshops/20y-cns/"
         analysis.fix_application = {
             "applied_at": "2026-01-04T00:00:00Z",
             "fixes": [
@@ -504,3 +505,42 @@ async def test_verify_rejects_a_non_http_target_url_override(tmp_path, monkeypat
         )
 
     assert response.status_code == 422
+
+
+async def test_verifying_against_a_different_page_is_refused(tmp_path, monkeypatch) -> None:
+    """The bug this closes: a before-capture of the deployed site and an
+    after-capture of some other site get compared, and the differences
+    between two *versions* are reported as damage the patch did. Declining
+    to answer beats answering wrongly."""
+    project_id, analysis_id = await _seed_applied(tmp_path, monkeypatch, applied=True)
+
+    async with await _client() as client:
+        response = await client.post(
+            f"/api/v1/projects/{project_id}/design-analysis/{analysis_id}/verify",
+            json={"target_url": "https://example.com/somewhere-else/"},
+        )
+
+    assert response.status_code == 409
+    detail = response.json()["detail"]
+    assert "two different pages" in detail
+    # Names both sides, so the fix is obvious without reading the code.
+    assert "cns-iu.github.io" in detail and "example.com" in detail
+
+
+async def test_verifying_against_a_local_server_for_the_same_page_is_allowed(
+    tmp_path, monkeypatch
+) -> None:
+    """The supported substitution: patches land in a local checkout, so the
+    deployed page can't show them yet. This must not be blocked — it gets
+    past the URL check and fails later for want of a stored capture."""
+    project_id, analysis_id = await _seed_applied(tmp_path, monkeypatch, applied=True)
+
+    async with await _client() as client:
+        response = await client.post(
+            f"/api/v1/projects/{project_id}/design-analysis/{analysis_id}/verify",
+            json={"target_url": "http://localhost:8080/workshops/20y-cns/"},
+        )
+
+    assert response.status_code == 409
+    assert "two different pages" not in response.json()["detail"]
+    assert "no stored production capture" in response.json()["detail"]

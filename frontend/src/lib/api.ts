@@ -352,6 +352,10 @@ export interface DesignAnalysis {
   model: string
   result: DesignAnalysisResult
   production_screenshot_key: string | null
+  // The URL that capture was taken from, fixed at run time. Project
+  // target_url is editable, so this is the only reliable record of what a
+  // stored run actually looked at.
+  target_url: string | null
   comparison_result: ComparisonResult | null
   diff_image_key: string | null
   visual_comparison: VisualReviewResult | null
@@ -374,6 +378,7 @@ export interface DesignAnalysis {
   // against the rebuilt page.
   verification: VerificationResult | null
   verification_screenshot_key: string | null
+  verification_target_url: string | null
   verification_diff_image_key: string | null
   created_at: string
 }

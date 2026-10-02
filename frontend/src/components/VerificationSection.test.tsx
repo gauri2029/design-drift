@@ -9,8 +9,10 @@ const APPLIED: DesignAnalysis = {
   id: 'run-1',
   verification: null,
   verification_screenshot_key: null,
+  verification_target_url: null,
   verification_diff_image_key: null,
   production_screenshot_key: 'design-analyses/run-1/production.png',
+  target_url: 'https://example.com',
   fix_application: {
     applied_at: '2026-01-04T00:00:00Z',
     fixes: [
@@ -103,6 +105,26 @@ describe('VerificationSection', () => {
     // The before/after pair is the deliverable of this whole step.
     expect(screen.getByAltText(/before the fixes/i)).toBeInTheDocument()
     expect(screen.getByAltText(/after the fixes/i)).toBeInTheDocument()
+  })
+
+  it('says which two URLs were compared', () => {
+    render(
+      <VerificationSection
+        project={PROJECT}
+        analysis={{
+          ...APPLIED,
+          verification: RESULT,
+          verification_target_url: 'http://localhost:8080/',
+        }}
+        onVerify={vi.fn()}
+        onApply={vi.fn()}
+      />,
+    )
+
+    // A local server standing in for the deployed site is allowed, so the
+    // reader has to be able to see that's what happened.
+    expect(screen.getByText('http://localhost:8080/')).toBeInTheDocument()
+    expect(screen.getByText('https://example.com')).toBeInTheDocument()
   })
 
   it('says plainly when the page never changed, rather than reading it as a failed fix', () => {

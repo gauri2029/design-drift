@@ -23,6 +23,7 @@ from app.integrations.storage.base import StorageBackend
 from app.models.design_analysis import DesignAnalysis
 from app.models.project import Project
 from app.schemas.fix_application import FixApplication
+from app.tools.url_origin import same_page
 
 
 class NotVerifiableError(Exception):
@@ -44,7 +45,26 @@ async def verify_design_analysis(
     so a project whose target is a deployed site would otherwise be
     verified against a page that cannot have changed yet. Pointing it at a
     local dev server is the honest way to check a fix before deploying it.
+
+    It is also the one way this step can produce a confidently wrong
+    answer, so it's checked: an override that addresses a *different page*
+    than the before-capture came from is refused. Comparing two versions of
+    a site reports their differences as damage the patch did, which is
+    worse than declining to answer.
     """
+    # Rows written before target_url was recorded can't have this checked,
+    # and refusing them would strand real runs over a column that didn't
+    # exist yet. The project's URL is the best available guess for them.
+    before_url = analysis.target_url or project.target_url
+    verified_url = target_url or before_url
+    if not same_page(before_url, verified_url):
+        raise NotVerifiableError(
+            f"this run captured {before_url!r}; verifying against {verified_url!r} would "
+            "compare two different pages and report their differences as regressions. "
+            "Point it at the same page (a local server for it is fine), or run the "
+            "workflow again against the new URL."
+        )
+
     if analysis.fix_application is None:
         raise NotVerifiableError("this run's patches haven't been applied yet")
 
@@ -69,7 +89,7 @@ async def verify_design_analysis(
         project_id=project.id,
         figma_node=project.figma_data or {},
         figma_screenshot=storage.read(project.figma_screenshot_key),
-        target_url=target_url or project.target_url,
+        target_url=verified_url,
         target_selector=project.target_selector,
         before_screenshot=storage.read(analysis.production_screenshot_key),
         before_comparison=ComparisonResult.model_validate(analysis.comparison_result),
@@ -92,6 +112,7 @@ async def verify_design_analysis(
     storage.save(diff_key, final_state.after_diff_screenshot)
 
     analysis.verification = final_state.verification.model_dump(mode="json")
+    analysis.verification_target_url = verified_url
     analysis.verification_screenshot_key = screenshot_key
     analysis.verification_diff_image_key = diff_key
     await db.commit()
