@@ -346,7 +346,20 @@ def _is_usable(anchor: Anchor) -> bool:
 
 
 def _deduplicate(anchors: Iterable[Anchor]) -> list[Anchor]:
-    seen: dict[tuple[str, str], Anchor] = {}
+    """One anchor per distinct value, keeping its strongest kind.
+
+    Keyed on value alone, not on (kind, value): the same string is often
+    found twice by different rules — a quoted "Register Now" is also a
+    title-case phrase — and keeping both made one mention of it outweigh a
+    different, equally real anchor. Ranking sums anchor weights per line
+    (see repo_search._best_region), so a duplicate is a thumb on the scale
+    for whichever string the finding happened to phrase twice. The eval
+    harness found this: a finding about a button labelled "Links" located
+    at the line mentioning "Register Now", which it named twice.
+    """
+    seen: dict[str, Anchor] = {}
     for anchor in anchors:
-        seen.setdefault((anchor.kind.value, anchor.value), anchor)
+        existing = seen.get(anchor.value)
+        if existing is None or anchor.weight > existing.weight:
+            seen[anchor.value] = anchor
     return sorted(seen.values(), key=lambda anchor: (-anchor.weight, anchor.value))

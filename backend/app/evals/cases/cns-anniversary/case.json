@@ -1,0 +1,133 @@
+{
+  "_comment": "The real page this project was developed against (sources/2025-04-18-20y-cns), copied verbatim. Every expected line number below was checked against this exact snapshot, not against a remembered earlier version of the file - it has an <h1> at line 19 that it did not have when the Fix Agent first ran on it.",
+  "target_selector": null,
+  "accessibility_report": {
+    "violation_count": 3,
+    "violations": [
+      {
+        "id": "html-has-lang",
+        "impact": "serious",
+        "description": "Ensure every HTML document has a lang attribute",
+        "help": "<html> element must have a lang attribute",
+        "helpUrl": "https://dequeuniversity.com/rules/axe/4.10/html-has-lang",
+        "nodes": [{ "target": ["html"], "html": "<html>" }]
+      },
+      {
+        "id": "landmark-one-main",
+        "impact": "moderate",
+        "description": "Ensure the document has a main landmark",
+        "help": "Document should have one main landmark",
+        "helpUrl": "https://dequeuniversity.com/rules/axe/4.10/landmark-one-main",
+        "nodes": [{ "target": ["html"], "html": "<html>" }]
+      },
+      {
+        "id": "region",
+        "impact": "moderate",
+        "description": "Ensure all page content is contained by landmarks",
+        "help": "All page content should be contained by landmarks",
+        "helpUrl": "https://dequeuniversity.com/rules/axe/4.10/region",
+        "nodes": [
+          {
+            "target": [".responsive-content"],
+            "html": "<div class=\"responsive-content\">"
+          }
+        ]
+      }
+    ]
+  },
+  "findings": [
+    {
+      "finding": {
+        "title": "html-has-lang",
+        "detail": "The <html> element has no lang attribute, so screen readers cannot determine the document language.",
+        "source": "accessibility"
+      },
+      "expected": {
+        "file_path": "index.html",
+        "line_start": 2,
+        "line_end": 2,
+        "rationale": "The bare <html> tag. A document-level rule with no id or class to anchor on - this is the case the TAG anchor kind exists for."
+      }
+    },
+    {
+      "finding": {
+        "title": "landmark-one-main",
+        "detail": "The document has no main landmark, so keyboard users cannot skip to the primary content.",
+        "source": "accessibility"
+      },
+      "expected": {
+        "file_path": "index.html",
+        "line_start": 13,
+        "line_end": 14,
+        "rationale": "The body and its top-level wrapper, which is where a <main> would be introduced. axe targets the whole document, so any location naming a div in the middle of the page is wrong."
+      }
+    },
+    {
+      "finding": {
+        "title": "region",
+        "detail": "Page content sits in a plain div rather than inside a landmark element.",
+        "source": "accessibility"
+      },
+      "expected": {
+        "file_path": "index.html",
+        "line_start": 14,
+        "line_end": 14,
+        "rationale": "div.responsive-content, named directly in axe's target. A class anchor with real DOM evidence behind it - should be the easiest of the three."
+      }
+    },
+    {
+      "finding": {
+        "title": "Hero button label reads 'Links' instead of 'Register Now'",
+        "detail": "The primary call-to-action button below the hero text is labelled 'Links →' in production, but the design shows 'Register Now'.",
+        "likely_area": "Hero call-to-action button",
+        "source": "visual_comparison"
+      },
+      "expected": {
+        "file_path": "index.html",
+        "line_start": 26,
+        "line_end": 34,
+        "rationale": "button.cta-button.links and the label div inside it. A visual finding quoting visible copy - locatable only because 'Links' appears verbatim in the markup."
+      }
+    },
+    {
+      "finding": {
+        "title": "Missing 'Register Now' section at the bottom of the page",
+        "detail": "The design shows a 'Register Now' section with a registration button below the final photo. Production ends at the photo.",
+        "likely_area": "Bottom of page, below the final photo",
+        "source": "visual_comparison"
+      },
+      "expected": {
+        "file_path": "index.html",
+        "line_start": 172,
+        "line_end": 190,
+        "rationale": "The commented-out section2 block. The hard case: the page does not render this, so the only evidence is the quoted phrase 'Register Now' appearing inside an HTML comment."
+      }
+    },
+    {
+      "finding": {
+        "title": "Schedule of Events list items do not match the design",
+        "detail": "The Schedule of Events section lists different times and sessions than the design does.",
+        "likely_area": "Schedule of Events section",
+        "source": "visual_comparison"
+      },
+      "expected": {
+        "file_path": "index.html",
+        "line_start": 101,
+        "line_end": 140,
+        "rationale": "The heading and the schedule cards under it. A title-case phrase from unquoted prose - the PHRASE anchor kind."
+      }
+    },
+    {
+      "finding": {
+        "title": "Footer social icons are missing",
+        "detail": "The design shows a row of social media icons in the footer. Production shows none.",
+        "likely_area": "Footer",
+        "source": "visual_comparison"
+      },
+      "expected": {
+        "file_path": null,
+        "rationale": "Deliberately unanswerable: this page has no social icons anywhere, in markup or comments. no_match is the correct answer, and a location here is a false positive. Without a case like this, a system that always guesses would score as well as one that knows when to stop."
+      }
+    }
+  ]
+}

@@ -1,0 +1,104 @@
+{
+  "_comment": "A component-structured codebase, deliberately unlike cns-anniversary's single hand-written HTML file. Two reasons it exists: markup lives in .tsx across several files so a finding has to pick between components, and the contrast violation's cause is in a stylesheet while the element is in markup - which is the case the markup-first tiebreak must NOT win, since the real evidence is in the CSS.",
+  "dom_snapshot": {
+    "viewport_width": 1280,
+    "viewport_height": 800,
+    "elements": [
+      {
+        "tag": "a",
+        "element_id": null,
+        "classes": [
+          "btn",
+          "btn--primary"
+        ],
+        "text": "Get started",
+        "box": {
+          "x": 40,
+          "y": 220,
+          "width": 128,
+          "height": 36
+        },
+        "styles": {
+          "color": "rgb(228, 236, 247)",
+          "background-color": "rgb(200, 212, 232)"
+        }
+      },
+      {
+        "tag": "h2",
+        "element_id": null,
+        "classes": [
+          "hero__title"
+        ],
+        "text": "Ship design-accurate UI",
+        "box": {
+          "x": 40,
+          "y": 120,
+          "width": 400,
+          "height": 40
+        },
+        "styles": {}
+      }
+    ]
+  },
+  "accessibility_report": {
+    "violation_count": 1,
+    "violations": [
+      {
+        "id": "color-contrast",
+        "impact": "serious",
+        "description": "Ensure contrast between foreground and background colors meets WCAG thresholds",
+        "help": "Elements must meet minimum color contrast ratio thresholds",
+        "helpUrl": "https://dequeuniversity.com/rules/axe/4.10/color-contrast",
+        "nodes": [
+          {
+            "target": [
+              ".btn--primary"
+            ],
+            "html": "<a class=\"btn btn--primary\" href=\"/signup\">Get started</a>"
+          }
+        ]
+      }
+    ]
+  },
+  "findings": [
+    {
+      "finding": {
+        "title": "color-contrast",
+        "detail": "The 'Get started' button's label is near-invisible against its background.",
+        "source": "accessibility"
+      },
+      "expected": {
+        "file_path": "src/components/Button.css",
+        "line_start": 6,
+        "line_end": 10,
+        "rationale": "The colours are declared in .btn--primary, so the stylesheet is where a developer fixes this - the markup only names the class. Deliberately a case the deterministic search is NOT expected to get on its own: Hero.tsx matches more anchors (it has the class and the label text) and legitimately outranks the CSS. Both files reach the candidates, which is the search's job; choosing between them needs to know that colour lives in CSS, which is judgment and therefore the LLM's job. So --search-only is expected to fail this one and the full run is expected to pass it - the gap between the two modes on this case is the measurement worth having."
+      }
+    },
+    {
+      "finding": {
+        "title": "Primary CTA reads 'Get started' instead of 'Start free trial'",
+        "detail": "The hero's primary button is labelled 'Get started' in production; the design shows 'Start free trial'.",
+        "likely_area": "Hero call-to-action",
+        "source": "visual_comparison"
+      },
+      "expected": {
+        "file_path": "src/components/Hero.tsx",
+        "line_start": 6,
+        "line_end": 8,
+        "rationale": "The anchor and its label text in Hero.tsx. Must not land in Footer.tsx, which also contains a link with a class starting 'footer__link' - a different component entirely."
+      }
+    },
+    {
+      "finding": {
+        "title": "Footer is missing the newsletter signup",
+        "detail": "The design shows an email capture form in the footer. Production shows only a privacy link.",
+        "likely_area": "Footer",
+        "source": "visual_comparison"
+      },
+      "expected": {
+        "file_path": null,
+        "rationale": "There is no newsletter markup anywhere in this checkout, so no_match is correct. Pairs with the cns-anniversary no_match case: two codebases of different shapes both have to know when to stop."
+      }
+    }
+  ]
+}
