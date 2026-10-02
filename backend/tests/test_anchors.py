@@ -307,10 +307,10 @@ def test_a_finding_naming_nothing_on_the_page_still_yields_no_element_anchors() 
 
 def test_an_accessible_name_matches_where_there_is_no_visible_text() -> None:
     anchors = extract_anchors(
-        texts=["The 'CNS logo' image is the wrong size."],
+        texts=["The 'Studio logo' image is the wrong size."],
         dom_snapshot=_snapshot(
             _element(
-                tag="img", element_id="logo", classes=[], text=None, accessible_name="CNS logo"
+                tag="img", element_id="logo", classes=[], text=None, accessible_name="Studio logo"
             )
         ),
     )

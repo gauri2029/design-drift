@@ -12,8 +12,8 @@ def test_a_local_server_stands_in_for_the_deployed_site() -> None:
     """The whole point of the override — patches land in a local checkout,
     so the deployed page can't show them until it's rebuilt."""
     assert same_page(
-        "https://cns-iu.github.io/workshops/2025-04-18-20y-cns/",
-        "http://localhost:8080/workshops/2025-04-18-20y-cns/",
+        "https://studio.example.org/workshops/spring-term/",
+        "http://localhost:8080/workshops/spring-term/",
     )
 
 
@@ -22,15 +22,13 @@ def test_a_local_server_need_not_reproduce_the_deployments_path() -> None:
     prefix that `python3 -m http.server` in the project folder serves at
     the root. Comparing paths here rejects the only case the override is
     ever used for — caught by checking the rule against real rows."""
-    assert same_page(
-        "https://cns-iu.github.io/workshops/2025-04-18-20y-cns/", "http://localhost:8080/"
-    )
+    assert same_page("https://studio.example.org/workshops/spring-term/", "http://localhost:8080/")
 
 
 def test_a_different_deployed_host_is_a_different_page() -> None:
     """This is the bug: comparing two sites reports their differences as
     damage the patch did."""
-    assert not same_page("https://cns-iu.github.io/a/", "https://example.com/a/")
+    assert not same_page("https://studio.example.org/a/", "https://example.com/a/")
 
 
 def test_a_different_path_on_the_same_host_is_a_different_page() -> None:
@@ -58,11 +56,11 @@ def test_query_and_fragment_are_not_a_different_target() -> None:
 
 
 def test_re_verifying_the_same_url_is_always_allowed() -> None:
-    url = "https://cns-iu.github.io/workshops/2025-04-18-20y-cns/"
+    url = "https://studio.example.org/workshops/spring-term/"
     assert same_page(url, url)
 
 
 def test_local_hosts_are_recognized_by_name_and_address() -> None:
     assert is_local("http://localhost:8080/")
     assert is_local("http://127.0.0.1:8080/")
-    assert not is_local("https://cns-iu.github.io/")
+    assert not is_local("https://studio.example.org/")

@@ -1,5 +1,5 @@
 {
-  "_comment": "A component-structured codebase, deliberately unlike cns-anniversary's single hand-written HTML file. Two reasons it exists: markup lives in .tsx across several files so a finding has to pick between components, and the contrast violation's cause is in a stylesheet while the element is in markup - which is the case the markup-first tiebreak must NOT win, since the real evidence is in the CSS.",
+  "_comment": "A component-structured codebase, deliberately unlike static-page's single hand-written HTML file. Two reasons it exists: markup lives in .tsx across several files so a finding has to pick between components, and the contrast violation's cause is in a stylesheet while the element is in markup - which is the case the markup-first tiebreak must NOT win, since the real evidence is in the CSS.",
   "dom_snapshot": {
     "viewport_width": 1280,
     "viewport_height": 800,
@@ -97,7 +97,7 @@
       },
       "expected": {
         "file_path": null,
-        "rationale": "There is no newsletter markup anywhere in this checkout, so no_match is correct. Pairs with the cns-anniversary no_match case: two codebases of different shapes both have to know when to stop."
+        "rationale": "There is no newsletter markup anywhere in this checkout, so no_match is correct. Pairs with the static-page no_match case: two codebases of different shapes both have to know when to stop."
       }
     }
   ]
