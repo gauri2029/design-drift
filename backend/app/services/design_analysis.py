@@ -138,6 +138,10 @@ async def _persist(
         model=settings.llm_model,
         result=final_state.design_analysis.model_dump(mode="json"),
         production_screenshot_key=production_screenshot_key,
+        # What that screenshot was of, fixed at run time — Project.target_url
+        # is editable, so reading it back later could describe a page this
+        # run never captured (see DesignAnalysis.target_url).
+        target_url=final_state.target_url,
         comparison_result=final_state.comparison_result.model_dump(mode="json"),
         diff_image_key=diff_image_key,
         visual_comparison=final_state.visual_comparison.model_dump(mode="json"),

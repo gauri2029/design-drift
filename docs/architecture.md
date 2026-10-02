@@ -205,6 +205,22 @@ Caveats against the target table below:
   evidence *and* kept in `VerificationResult` beside the verdicts, so a
   reader can check a verdict against a measurement instead of trusting it.
   `unclear` is an allowed verdict, for the same reason `no_match` is.
+- **A before/after is refused when it would span two pages.** Each run
+  records the URL it captured from (`DesignAnalysis.target_url`), rather
+  than reading it back off `Project.target_url`, which is editable and so
+  could later describe a page the run never looked at. Verification
+  compares that against the URL it is about to capture
+  (`app/tools/url_origin.py`) and refuses a genuine mismatch: comparing two
+  versions of a site reports their differences as damage a patch did, which
+  is worse than declining to answer. Found by hitting it — a verification
+  reported a heading as a regression that was never in the source.
+  A local host is trusted wholesale, host and path both: a deployment
+  usually serves the site under a path prefix its dev server doesn't
+  reproduce (GitHub Pages at `/workshops/…/` versus `python3 -m
+  http.server` at `/`), so comparing paths would reject the only case the
+  override is ever used for. Whether that server really serves that site
+  is not knowable from a URL, so both URLs are shown in the result for the
+  reader to judge.
 - **An unchanged page is reported as unchanged, not as a failed fix.**
   Patches are written to a local checkout, so a project whose target is a
   deployed site sees nothing until it's rebuilt — which looks identical to

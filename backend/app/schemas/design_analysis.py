@@ -26,6 +26,7 @@ class DesignAnalysisRead(BaseModel):
     model: str
     result: DesignAnalysisResult
     production_screenshot_key: str | None
+    target_url: str | None
     comparison_result: ComparisonResult | None
     diff_image_key: str | None
     visual_comparison: VisualReviewResult | None
@@ -45,5 +46,8 @@ class DesignAnalysisRead(BaseModel):
     # against the rebuilt page (see app.services.verification).
     verification: VerificationResult | None
     verification_screenshot_key: str | None
+    # Which URL each capture came from, so a reader can tell a before/after
+    # of one page from one that spans two.
+    verification_target_url: str | None
     verification_diff_image_key: str | None
     created_at: datetime

@@ -29,6 +29,7 @@ const ANALYSIS: DesignAnalysis = {
     implementation_risks: ['The heading spacing is easy to get wrong.'],
   },
   production_screenshot_key: 'design-analyses/run-1/production.png',
+  target_url: 'https://example.com',
   comparison_result: null,
   diff_image_key: 'design-analyses/run-1/diff.png',
   visual_comparison: null,
@@ -87,6 +88,7 @@ const ANALYSIS: DesignAnalysis = {
   fix_application: null,
   verification: null,
   verification_screenshot_key: null,
+  verification_target_url: null,
   verification_diff_image_key: null,
   created_at: '2026-01-02T00:00:00Z',
 }

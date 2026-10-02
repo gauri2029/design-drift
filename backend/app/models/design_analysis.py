@@ -42,6 +42,14 @@ class DesignAnalysis(Base):
     # (see app.integrations.storage) — same pattern as
     # Scan.production_screenshot_key.
     production_screenshot_key: Mapped[str | None] = mapped_column(nullable=True)
+    # The URL that screenshot was actually taken from. Recorded per run
+    # rather than read back off Project.target_url, because that field is
+    # editable: without this, a project retargeted after a run would make
+    # every stored capture claim to be of a page it never showed. It's also
+    # what verification compares against — a before/after taken from two
+    # different URLs measures the difference between two sites, not the
+    # effect of a patch.
+    target_url: Mapped[str | None] = mapped_column(nullable=True)
     # Visual Comparison Agent's deterministic pixel-diff result/image and
     # LLM judgment — same shapes as Scan.comparison_result/diff_image_key
     # and Review.result respectively.
@@ -94,6 +102,9 @@ class DesignAnalysis(Base):
     # the originals — the before/after pair is the point.
     verification: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
     verification_screenshot_key: Mapped[str | None] = mapped_column(nullable=True)
+    # The URL verification captured from, which may be a local dev server
+    # rather than the run's own target_url (see app.services.verification).
+    verification_target_url: Mapped[str | None] = mapped_column(nullable=True)
     verification_diff_image_key: Mapped[str | None] = mapped_column(nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
