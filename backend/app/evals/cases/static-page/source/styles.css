@@ -1,0 +1,37 @@
+.page-wrap {
+  margin: 0 auto;
+  max-width: 1400px;
+}
+
+.hero-section {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  padding: 64px 32px;
+}
+
+.hero-kicker {
+  font-size: 32px;
+  font-weight: 500;
+}
+
+.cta-button {
+  align-items: center;
+  border-radius: 100px;
+  display: flex;
+  padding: 10px 24px;
+}
+
+.info-section {
+  padding: 48px 32px;
+}
+
+.schedule-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.site-footer {
+  padding: 32px;
+}

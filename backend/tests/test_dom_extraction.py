@@ -40,7 +40,7 @@ async def test_text_is_the_elements_own_not_its_descendants(fixture_server) -> N
     main = next(element for element in snapshot.elements if element.tag == "main")
 
     assert main.text is None
-    assert _by_id(snapshot, "page-title").text == "Twenty Years of CNS"
+    assert _by_id(snapshot, "page-title").text == "Riverside Pottery Studio"
 
 
 async def test_elements_that_are_not_rendered_are_left_out(fixture_server) -> None:
@@ -56,7 +56,7 @@ async def test_elements_that_are_not_rendered_are_left_out(fixture_server) -> No
 async def test_an_accessible_name_is_captured_where_there_is_no_text(fixture_server) -> None:
     snapshot = await _snapshot(fixture_server)
 
-    assert _by_id(snapshot, "logo").accessible_name == "CNS logo"
+    assert _by_id(snapshot, "logo").accessible_name == "Studio logo"
 
 
 async def test_the_screenshot_and_the_dom_come_from_one_page_load(fixture_server) -> None:
@@ -81,4 +81,4 @@ async def test_the_dom_covers_the_page_even_when_the_screenshot_is_scoped(
 
     capture = await capture_page(f"http://{host}:{port}/dom_fixture.html", selector="#hero-cta")
 
-    assert _by_id(capture.dom, "page-title").text == "Twenty Years of CNS"
+    assert _by_id(capture.dom, "page-title").text == "Riverside Pottery Studio"

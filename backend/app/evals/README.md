@@ -90,16 +90,29 @@ cases/my-case/
   case.json         findings, hand-verified answers, axe + DOM evidence
 ```
 
-Every expected line number must be checked against the committed `source/`,
-not against a remembered earlier version of the file — `cns-anniversary`
+Fixtures must be **synthetic**, not copied from a real site. Target-app
+source belongs to whoever owns it — `sources/` is gitignored for exactly
+that reason, and a fixture must not smuggle it back into the repo. Write a
+page that reproduces the *structural* traits that make retrieval hard; the
+content itself is irrelevant to what's being measured. `static-page`
+replaced a copied real page and scores identically, including on bug
+detection.
+
+Every expected line number must be checked against the committed `source/`
+— `static-page`
 has an `<h1>` that the live page didn't have when the Fix Agent first ran
 on it.
 
 Two things a good case set needs:
 
+- **Wording that reproduces the failure.** `static-page`'s hero finding
+  names a title-case competing label ("Enrol Today") on purpose: title case
+  extracts as both a quoted literal *and* a phrase, which is what makes the
+  double-counting bug visible. A lowercase label doesn't reproduce it. The
+  fixture's prose is part of the test, not decoration.
 - **At least one `file_path: null` case per codebase shape.** Without one, a
   system that always guesses scores as well as one that knows when to stop.
   Both current cases have one.
-- **Different codebase shapes.** `cns-anniversary` is one hand-written HTML
+- **Different codebase shapes.** `static-page` is one hand-written HTML
   file; `component-app` is `.tsx` components plus a stylesheet. The second
   caught a problem the first couldn't on the run it was added.

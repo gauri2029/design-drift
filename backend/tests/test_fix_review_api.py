@@ -432,7 +432,7 @@ async def _seed_applied(tmp_path, monkeypatch, *, applied: bool) -> tuple[str, s
     async with async_session_factory() as session:
         analysis = await session.get(DesignAnalysis, uuid.UUID(analysis_id))
         assert analysis is not None
-        analysis.target_url = "https://cns-iu.github.io/workshops/20y-cns/"
+        analysis.target_url = "https://studio.example.org/workshops/spring-term/"
         analysis.fix_application = {
             "applied_at": "2026-01-04T00:00:00Z",
             "fixes": [
@@ -524,7 +524,7 @@ async def test_verifying_against_a_different_page_is_refused(tmp_path, monkeypat
     detail = response.json()["detail"]
     assert "two different pages" in detail
     # Names both sides, so the fix is obvious without reading the code.
-    assert "cns-iu.github.io" in detail and "example.com" in detail
+    assert "studio.example.org" in detail and "example.com" in detail
 
 
 async def test_verifying_against_a_local_server_for_the_same_page_is_allowed(
@@ -538,7 +538,7 @@ async def test_verifying_against_a_local_server_for_the_same_page_is_allowed(
     async with await _client() as client:
         response = await client.post(
             f"/api/v1/projects/{project_id}/design-analysis/{analysis_id}/verify",
-            json={"target_url": "http://localhost:8080/workshops/20y-cns/"},
+            json={"target_url": "http://localhost:8080/workshops/spring-term/"},
         )
 
     assert response.status_code == 409

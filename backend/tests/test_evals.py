@@ -7,6 +7,7 @@ one end-to-end run of the deterministic path over a tiny fixture.
 """
 
 import json
+import re
 
 import pytest
 
@@ -150,10 +151,10 @@ async def test_a_failure_records_the_anchors_and_candidates_behind_it(tiny_case)
 # improves and another regresses.
 
 
-async def test_the_cns_case_locates_every_finding_deterministically() -> None:
+async def test_the_static_page_case_locates_every_finding_deterministically() -> None:
     """7/7 without an LLM. Was 5/7 before the harness existed — see
     app/evals/README.md for the three bugs behind those two failures."""
-    case = load_case(CASES_ROOT / "cns-anniversary")
+    case = load_case(CASES_ROOT / "static-page")
 
     score = await run_case(case, search_only=True)
 
@@ -184,7 +185,7 @@ async def test_both_committed_cases_know_when_to_stop() -> None:
     """A no_match case per codebase shape. Without these, a system that
     always guesses would score as well as one that admits the evidence
     isn't there."""
-    for name in ("cns-anniversary", "component-app"):
+    for name in ("static-page", "component-app"):
         score = await run_case(load_case(CASES_ROOT / name), search_only=True)
         no_match_cases = [
             finding for finding in score.findings if finding.expected.file_path is None
@@ -193,3 +194,32 @@ async def test_both_committed_cases_know_when_to_stop() -> None:
         assert all(finding.outcome is Outcome.CORRECT_NO_MATCH for finding in no_match_cases), (
             f"{name} invented a location where there was nothing to find"
         )
+
+
+def test_no_eval_fixture_points_at_a_real_third_party_site() -> None:
+    """Fixtures must be synthetic.
+
+    Target-app source belongs to whoever owns it — `sources/` is gitignored
+    for that reason, and `app/evals/cases/` must not become a way to commit
+    it anyway. A real site's markup was copied in here once; this is the
+    guard against doing it again. Checked by host rather than by content,
+    since a real page is recognisable by what it links to long before
+    anyone reads it.
+    """
+    reserved = ("example.org", "example.com", "example.test", "localhost", "127.0.0.1")
+    offenders = []
+
+    for path in CASES_ROOT.rglob("*"):
+        if not path.is_file():
+            continue
+        for match in re.finditer(r"https?://([^/\s\"')]+)", path.read_text()):
+            host = match.group(1)
+            # Font and spec hosts a hand-written fixture legitimately cites.
+            if host.endswith(("dequeuniversity.com", "fonts.googleapis.com", "w3.org")):
+                continue
+            if not host.endswith(reserved):
+                offenders.append(f"{path.relative_to(CASES_ROOT)}: {host}")
+
+    assert offenders == [], (
+        "eval fixtures must not reference real sites — use example.org. Found: " f"{offenders}"
+    )

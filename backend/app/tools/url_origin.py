@@ -34,7 +34,7 @@ def same_page(before: str, after: str) -> bool:
       exists to permit, and it is trusted entirely: neither host nor path
       is compared. A deployment usually serves the site under a path prefix
       its dev server doesn't reproduce — GitHub Pages at
-      `/workshops/2025-04-18-20y-cns/` is served by `python3 -m
+      `/workshops/spring-term/` is served by `python3 -m
       http.server` at `/` — so comparing paths here would reject the only
       case anyone uses the override for. The user is asserting "this local
       server is that site", and there is no way to check that from a URL;

@@ -1,0 +1,149 @@
+{
+  "_comment": "A synthetic single-file static page. Written for this harness rather than copied from a real site: target-app source belongs to whoever owns it, and `sources/` is gitignored for that reason, so a fixture must not smuggle it back in. What it reproduces are the structural traits that make retrieval hard, each of which exercises a specific anchor kind: a bare <html> with no lang (TAG), content in a plain div with no landmark (CLASS from axe), a button whose rendered label differs from the design (TEXT), a title-case section name in unquoted prose (PHRASE), and a commented-out block that renders nowhere yet is the right answer. Every line number below was checked against the committed source/index.html.",
+  "target_selector": null,
+  "accessibility_report": {
+    "violation_count": 3,
+    "violations": [
+      {
+        "id": "html-has-lang",
+        "impact": "serious",
+        "description": "Ensure every HTML document has a lang attribute",
+        "help": "<html> element must have a lang attribute",
+        "helpUrl": "https://dequeuniversity.com/rules/axe/4.10/html-has-lang",
+        "nodes": [
+          {
+            "target": [
+              "html"
+            ],
+            "html": "<html>"
+          }
+        ]
+      },
+      {
+        "id": "landmark-one-main",
+        "impact": "moderate",
+        "description": "Ensure the document has a main landmark",
+        "help": "Document should have one main landmark",
+        "helpUrl": "https://dequeuniversity.com/rules/axe/4.10/landmark-one-main",
+        "nodes": [
+          {
+            "target": [
+              "html"
+            ],
+            "html": "<html>"
+          }
+        ]
+      },
+      {
+        "id": "region",
+        "impact": "moderate",
+        "description": "Ensure all page content is contained by landmarks",
+        "help": "All page content should be contained by landmarks",
+        "helpUrl": "https://dequeuniversity.com/rules/axe/4.10/region",
+        "nodes": [
+          {
+            "target": [
+              ".page-wrap"
+            ],
+            "html": "<div class=\"page-wrap\">"
+          }
+        ]
+      }
+    ]
+  },
+  "findings": [
+    {
+      "finding": {
+        "title": "html-has-lang",
+        "detail": "The <html> element has no lang attribute, so screen readers cannot determine the document language.",
+        "source": "accessibility"
+      },
+      "expected": {
+        "file_path": "index.html",
+        "line_start": 2,
+        "line_end": 2,
+        "rationale": "The bare <html> tag. A document-level rule with no id or class to anchor on - this is the case the TAG anchor kind exists for."
+      }
+    },
+    {
+      "finding": {
+        "title": "landmark-one-main",
+        "detail": "The document has no main landmark, so keyboard users cannot skip to the primary content.",
+        "source": "accessibility"
+      },
+      "expected": {
+        "file_path": "index.html",
+        "line_start": 8,
+        "line_end": 9,
+        "rationale": "The body and its top-level wrapper, where a <main> would be introduced. axe targets the whole document, so a location naming some div mid-page is wrong."
+      }
+    },
+    {
+      "finding": {
+        "title": "region",
+        "detail": "Page content sits in a plain div rather than inside a landmark element.",
+        "source": "accessibility"
+      },
+      "expected": {
+        "file_path": "index.html",
+        "line_start": 9,
+        "line_end": 9,
+        "rationale": "div.page-wrap, named directly in axe's target. Real DOM evidence behind a class anchor, so it should be the easiest of the three - and it is the case that caught stylesheets outranking markup on an alphabetical tie, since .page-wrap appears once in each file."
+      }
+    },
+    {
+      "finding": {
+        "title": "Hero button label reads 'More info' instead of 'Enrol Today'",
+        "detail": "The primary call-to-action below the hero text is labelled 'More info \u2192' in production, but the design shows 'Enrol Today'.",
+        "likely_area": "Hero call-to-action button",
+        "source": "visual_comparison"
+      },
+      "expected": {
+        "file_path": "index.html",
+        "line_start": 15,
+        "line_end": 18,
+        "rationale": "button.cta-button.info and its label. Locatable only because 'More info' appears verbatim in the markup. The competing label is deliberately title-case: 'Enrol Today' extracts as both a quoted literal and a title-case phrase, and it also appears in the commented-out section 38 lines below. That is what makes this case catch two real bugs - line regions ignoring anchor weight, and one string counting twice when two rules both extract it - each of which landed this finding on the wrong block. A lowercase competing label does not reproduce either, which is why the wording here matters."
+      }
+    },
+    {
+      "finding": {
+        "title": "Missing 'Enrol Today' section at the bottom of the page",
+        "detail": "The design shows an 'Enrol Today' section with a sign-up button below the gallery. Production ends at the gallery.",
+        "likely_area": "Bottom of page, below the gallery",
+        "source": "visual_comparison"
+      },
+      "expected": {
+        "file_path": "index.html",
+        "line_start": 53,
+        "line_end": 64,
+        "rationale": "The commented-out enrol-section block. The hard case: the page renders none of this, so the only evidence is the quoted phrase appearing inside an HTML comment."
+      }
+    },
+    {
+      "finding": {
+        "title": "Class Schedule entries do not match the design",
+        "detail": "The Class Schedule section lists different days and sessions than the design does.",
+        "likely_area": "Class Schedule section",
+        "source": "visual_comparison"
+      },
+      "expected": {
+        "file_path": "index.html",
+        "line_start": 29,
+        "line_end": 43,
+        "rationale": "The heading and the cards under it. A title-case phrase lifted from unquoted prose - the PHRASE anchor kind."
+      }
+    },
+    {
+      "finding": {
+        "title": "Footer social icons are missing",
+        "detail": "The design shows a row of social media icons in the footer. Production shows none.",
+        "likely_area": "Footer",
+        "source": "visual_comparison"
+      },
+      "expected": {
+        "file_path": null,
+        "rationale": "Deliberately unanswerable: this page has no social icons anywhere, in markup or comments. no_match is correct and a location here is a false positive. Without a case like this, a system that always guesses scores as well as one that knows when to stop."
+      }
+    }
+  ]
+}
