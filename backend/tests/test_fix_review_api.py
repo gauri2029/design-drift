@@ -262,15 +262,18 @@ async def test_approved_patches_are_written_to_the_checkout(tmp_path, monkeypatc
 
     assert response.status_code == 200, response.text
     application = response.json()["fix_application"]
-    assert application["fixes"] == [
-        {
-            "finding_title": "html-has-lang",
-            "file_path": "index.html",
-            "applied": True,
-            "reason": None,
-        }
-    ]
+    written = application["fixes"][0]
+    assert len(application["fixes"]) == 1
+    assert written["finding_title"] == "html-has-lang"
+    assert written["file_path"] == "index.html"
+    assert written["applied"] is True
+    assert written["reason"] is None
     assert '<html lang="en">' in (checkout / "index.html").read_text()
+    # The undo, reported through the API: a configured checkout isn't a git
+    # clone, so this path is the only way back to the file as it was.
+    backup = checkout / written["backup_path"]
+    assert backup.is_file()
+    assert '<html lang="">' in backup.read_text()
 
 
 async def test_a_rejected_patch_is_never_written(tmp_path, monkeypatch) -> None:

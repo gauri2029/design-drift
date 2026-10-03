@@ -535,6 +535,15 @@ function FixItem({
         <span className="font-medium text-slate-900 dark:text-slate-100">{fix.finding_title}</span>
       </div>
 
+      {/* The undo. Worth showing explicitly: a configured source folder is
+          a copy someone made, not a git clone, so this path is the only way
+          back to the file as it was. */}
+      {applied?.backup_path && (
+        <p className="mt-1 text-xs text-slate-500 dark:text-slate-500">
+          Previous contents saved to <code>{applied.backup_path}</code>
+        </p>
+      )}
+
       {fix.patch && (
         <>
           <p className="mt-1 font-mono text-xs text-indigo-700 dark:text-indigo-300">

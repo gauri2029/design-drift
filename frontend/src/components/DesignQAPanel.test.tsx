@@ -286,6 +286,7 @@ describe('DesignQAPanel', () => {
             file_path: 'src/components/Button.tsx',
             applied: true,
             reason: null,
+            backup_path: null,
           },
         ],
       },
@@ -336,6 +337,7 @@ describe('DesignQAPanel', () => {
             file_path: 'src/components/Button.tsx',
             applied: false,
             reason: 'the code this patch replaces is no longer in the file at that place',
+            backup_path: null,
           },
         ],
       },
@@ -389,6 +391,41 @@ describe('DesignQAPanel', () => {
     // Code analysis is skipped because there was nothing to locate — a
     // different reason from "no checkout", and worth saying so.
     expect(screen.getByText(/no problems were found/i)).toBeInTheDocument()
+  })
+
+  it('says where the previous contents were saved', async () => {
+    const applied = {
+      ...ANALYSIS,
+      fix_application: {
+        applied_at: '2026-01-04T00:00:00Z',
+        fixes: [
+          {
+            finding_title: 'color-contrast',
+            file_path: 'src/components/Button.tsx',
+            applied: true,
+            reason: null,
+            backup_path: '.design-drift-backups/20260104T000000.000000Z/src/components/Button.tsx',
+          },
+        ],
+      },
+    }
+    stubFetch((url, method) => {
+      if (url.endsWith('/design-analysis') && method === 'GET') {
+        return { ok: true, json: async () => [applied] }
+      }
+      throw new Error(`Unexpected fetch: ${method} ${url}`)
+    })
+
+    render(<DesignQAPanel project={PROJECT} />)
+
+    // The only undo a non-git checkout has, so it has to be visible rather
+    // than a convention someone is expected to know.
+    expect(await screen.findByText(/previous contents saved to/i)).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        '.design-drift-backups/20260104T000000.000000Z/src/components/Button.tsx',
+      ),
+    ).toBeInTheDocument()
   })
 
   it('surfaces a failed run without crashing', async () => {

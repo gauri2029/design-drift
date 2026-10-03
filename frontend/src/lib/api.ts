@@ -475,6 +475,10 @@ export interface AppliedFix {
   file_path: string
   applied: boolean
   reason: string | null
+  // Where the file's pre-patch contents were kept, relative to the
+  // checkout. A configured source folder isn't a git clone, so this is the
+  // only way to undo an apply.
+  backup_path: string | null
 }
 
 export interface FixApplication {

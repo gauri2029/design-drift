@@ -18,6 +18,11 @@ class AppliedFix(BaseModel):
     applied: bool
     # Why it wasn't, when it wasn't. Null on success.
     reason: str | None = None
+    # Where this file's pre-patch contents were kept, relative to the
+    # checkout. Surfaced rather than left as a convention someone has to
+    # know, because it's the answer to "how do I undo this" — and for a
+    # checkout that isn't a git clone, it's the only answer.
+    backup_path: str | None = None
 
 
 class FixApplication(BaseModel):

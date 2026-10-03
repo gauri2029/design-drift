@@ -288,8 +288,7 @@ def _from_element(element: DomElement) -> list[Anchor]:
 def _from_selector(selector: str) -> list[Anchor]:
     kinds = {"#": AnchorKind.ID, ".": AnchorKind.CLASS}
     anchors = [
-        Anchor(kind=kinds[prefix], value=name)
-        for prefix, name in _SELECTOR_TOKEN.findall(selector)
+        Anchor(kind=kinds[prefix], value=name) for prefix, name in _SELECTOR_TOKEN.findall(selector)
     ]
     if anchors:
         return anchors

@@ -51,10 +51,19 @@ SOURCE_EXTENSIONS = frozenset(
 )
 
 # Directories that are never a project's own source: dependency trees,
-# build output, VCS internals. Skipping them keeps the listing meaningful
-# (and small) rather than drowning real files in node_modules.
+# build output, VCS internals, and our own backups. Skipping them keeps the
+# listing meaningful (and small) rather than drowning real files in
+# node_modules.
+# Where app.tools.apply_patch keeps pre-patch copies. Defined here, not
+# there, because that module imports this one and the search is what has to
+# skip it: backups live inside the checkout and carry the same extensions,
+# so without excluding them the search would rank a stale copy of a file as
+# a candidate and send a developer to code that is no longer live.
+BACKUP_DIRECTORY = ".design-drift-backups"
+
 IGNORED_DIRECTORIES = frozenset(
     {
+        BACKUP_DIRECTORY,
         ".git",
         ".next",
         ".nuxt",

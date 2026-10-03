@@ -13,12 +13,23 @@ replacement go on" are exact questions, so they're answered exactly, and a
 patch that no longer fits is skipped and reported rather than forced.
 """
 
+from datetime import UTC, datetime
 from pathlib import Path
 
 from pydantic import BaseModel
 
 from app.agents.types import Patch
-from app.tools.repo_search import SOURCE_EXTENSIONS, SourceNotAccessibleError
+from app.tools.repo_search import (
+    BACKUP_DIRECTORY,
+    SOURCE_EXTENSIONS,
+    SourceNotAccessibleError,
+)
+
+# BACKUP_DIRECTORY is defined in repo_search because that module is what has
+# to skip it when listing source files, and it can't import this one.
+# Backups go in one directory rather than as `.orig` files beside the
+# originals: a sibling `index.html.orig` sits in the tree the user's own
+# tooling sees, whereas one directory is easy to ignore and easy to delete.
 
 
 class PatchOutcome(BaseModel):
@@ -30,6 +41,10 @@ class PatchOutcome(BaseModel):
     # Machine-readable so the frontend can style it; the human-facing
     # sentence is built from this rather than parsed out of prose.
     reason: str | None = None
+    # Where the pre-patch contents were kept, relative to the checkout.
+    # Reported rather than merely written, so "how do I undo this" has an
+    # answer in the UI instead of requiring someone to know the convention.
+    backup_path: str | None = None
 
 
 def resolve_within(root: Path, file_path: str) -> Path:
@@ -122,6 +137,13 @@ def apply_patches(root: Path, patches: list[tuple[str, Patch]]) -> dict[str, Pat
     written once, at the end — a file with any failing patch still gets its
     other, valid patches, but a file is never left half-written by an
     exception mid-loop.
+
+    Every file is copied to BACKUP_DIRECTORY before it's written. A source
+    checkout configured this way is a folder someone copied in, not a git
+    clone (`sources/` is gitignored), so there is no history to recover
+    from and an overwrite is otherwise final — docs/principles.md #5 is
+    about the human keeping control of consequential actions, and that
+    includes being able to undo one.
     """
     outcomes: dict[str, PatchOutcome] = {}
     by_file: dict[str, list[tuple[str, Patch]]] = {}
@@ -163,10 +185,47 @@ def apply_patches(root: Path, patches: list[tuple[str, Patch]]) -> dict[str, Pat
             changed = True
 
         if changed:
+            backup = _back_up(root, file_path, original)
             # Preserve whether the file ended with a newline. Flipping that
             # shows up as a whole-file diff in the user's next `git diff`,
             # which buries the change they actually approved.
             suffix = "\n" if original.endswith("\n") else ""
             target.write_text("\n".join(lines) + suffix, encoding="utf-8")
+            for title, _ in file_patches:
+                if outcomes[title].applied:
+                    outcomes[title] = outcomes[title].model_copy(update={"backup_path": backup})
 
     return outcomes
+
+
+def _back_up(root: Path, file_path: str, contents: str) -> str:
+    """Copy a file's current contents aside, returning the relative path.
+
+    Timestamped, and never overwritten. Applying is repeatable, so a naive
+    single `.orig` per file would be replaced on the second apply — by
+    which point the file already holds the first apply's output, and the
+    pristine original would be the one thing lost. Keeping every version
+    costs a few KB of text and removes that failure entirely.
+
+    `contents` is passed in rather than re-read: it's the string the caller
+    already has, so the backup is provably the bytes about to be
+    overwritten rather than whatever the file says a moment later.
+    """
+    # Millisecond precision, and then a counter if even that collides. Two
+    # applies a second apart is an ordinary thing for someone retrying a
+    # fix, and at second resolution the later one would silently overwrite
+    # the earlier backup — which is the exact loss this function exists to
+    # prevent. Caught by a test doing precisely that.
+    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S.%fZ")
+    # Mirrors the checkout's own layout, so two files with the same name in
+    # different directories don't collide.
+    relative = Path(file_path)
+    backups = root / BACKUP_DIRECTORY
+    destination = backups / stamp / relative
+    attempt = 1
+    while destination.exists():
+        destination = backups / f"{stamp}-{attempt}" / relative
+        attempt += 1
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_text(contents, encoding="utf-8")
+    return str(destination.relative_to(root))
