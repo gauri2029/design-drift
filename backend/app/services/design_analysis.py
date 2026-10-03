@@ -276,6 +276,7 @@ async def apply_fix_review(
                 file_path=patch.file_path,
                 applied=outcomes[title].applied,
                 reason=outcomes[title].reason,
+                backup_path=outcomes[title].backup_path,
             )
             for title, patch in patches
         ],

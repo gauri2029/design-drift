@@ -53,6 +53,7 @@ describe('VerificationSection', () => {
             file_path: 'index.html',
             applied: false,
             reason: 'the code is no longer in the file',
+            backup_path: null,
           },
         ],
       },

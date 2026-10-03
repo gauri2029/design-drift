@@ -199,6 +199,18 @@ Caveats against the target table below:
   skipped rather than guessed at. What was and wasn't written is recorded
   per patch (`DesignAnalysis.fix_application`) — an approved patch that no
   longer fits is reported, never forced.
+  Every file is copied into `.design-drift-backups/<timestamp>/` before
+  it's written, and the path is reported per patch so the UI can show it. A
+  configured checkout is a folder someone copied in, not a git clone
+  (`sources/` is gitignored), so there is no history to recover from and an
+  overwrite would otherwise be final — principle #5 is about the human
+  keeping control of consequential actions, and that includes undoing one.
+  Backups are timestamped to the microsecond and never overwritten: a
+  single `.orig` per file would be replaced on the second apply, by which
+  point the file already holds the first apply's output, so the pristine
+  original would be the one thing lost. The backup directory is in
+  `IGNORED_DIRECTORIES`, since a stale copy ranked as a search candidate
+  would send a developer to code that is no longer live.
   Applying is repeatable, and has to be: a verification can come back
   unresolved because the checkout was reverted, a build overwrote it, or
   someone edited the file, and re-applying the same approved patches is

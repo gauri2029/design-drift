@@ -7,8 +7,8 @@ from pathlib import Path
 import pytest
 
 from app.agents.types import Patch
-from app.tools.apply_patch import apply_patches, resolve_within
-from app.tools.repo_search import SourceNotAccessibleError
+from app.tools.apply_patch import BACKUP_DIRECTORY, apply_patches, resolve_within
+from app.tools.repo_search import SourceNotAccessibleError, list_source_files
 
 
 def _patch(**overrides) -> Patch:
@@ -61,7 +61,7 @@ def test_a_patch_whose_code_is_gone_is_skipped_and_the_file_untouched(
     before = (checkout / "index.html").read_text()
 
     outcomes = apply_patches(
-        checkout, [("html-has-lang", _patch(original_code="  <html lang=\"fr\">"))]
+        checkout, [("html-has-lang", _patch(original_code='  <html lang="fr">'))]
     )
 
     assert outcomes["html-has-lang"].applied is False
@@ -177,3 +177,91 @@ def test_a_file_without_a_trailing_newline_keeps_not_having_one(tmp_path: Path) 
     apply_patches(tmp_path, [("html-has-lang", _patch())])
 
     assert (tmp_path / "index.html").read_text() == '<!doctype html>\n  <html lang="en">'
+
+
+# --- backups ---------------------------------------------------------------
+#
+# A configured checkout is a folder someone copied in, not a git clone
+# (`sources/` is gitignored), so there is no history to recover from and an
+# overwrite is otherwise final.
+
+
+def test_the_pre_patch_contents_are_kept_before_a_file_is_written(checkout: Path) -> None:
+    before = (checkout / "index.html").read_text()
+
+    outcomes = apply_patches(checkout, [("html-has-lang", _patch())])
+
+    backup = checkout / outcomes["html-has-lang"].backup_path
+    assert backup.read_text() == before
+    # And the live file really did change, so the backup isn't just a copy
+    # of an unmodified file.
+    assert (checkout / "index.html").read_text() != before
+
+
+def test_re_applying_never_overwrites_the_pristine_original(checkout: Path) -> None:
+    """The failure a single `.orig` per file would cause: by the second
+    apply the file already holds the first apply's output, so overwriting
+    one backup slot would destroy the only copy of the original."""
+    original = (checkout / "index.html").read_text()
+
+    first = apply_patches(checkout, [("html-has-lang", _patch())])
+    # Something else edits the file, then the patch is applied again.
+    (checkout / "index.html").write_text(original, encoding="utf-8")
+    second = apply_patches(checkout, [("html-has-lang", _patch())])
+
+    first_backup = checkout / first["html-has-lang"].backup_path
+    second_backup = checkout / second["html-has-lang"].backup_path
+    assert first_backup != second_backup
+    assert first_backup.read_text() == original
+    assert second_backup.read_text() == original
+
+
+def test_a_skipped_patch_leaves_no_backup(checkout: Path) -> None:
+    """Nothing was written, so there is nothing to undo — a backup here
+    would just be litter implying an edit happened."""
+
+    outcomes = apply_patches(
+        checkout, [("html-has-lang", _patch(original_code='  <html lang="fr">'))]
+    )
+
+    assert outcomes["html-has-lang"].applied is False
+    assert outcomes["html-has-lang"].backup_path is None
+    assert not (checkout / BACKUP_DIRECTORY).exists()
+
+
+def test_backups_mirror_the_checkout_layout(checkout: Path) -> None:
+    """Two files sharing a name in different directories must not collide."""
+    nested = checkout / "pages"
+    nested.mkdir()
+    (nested / "index.html").write_text('<html lang="">\n<body>deep</body>\n</html>\n')
+
+    outcomes = apply_patches(
+        checkout,
+        [
+            ("root", _patch()),
+            (
+                "nested",
+                _patch(
+                    file_path="pages/index.html",
+                    original_code='<html lang="">',
+                    line_start=1,
+                    line_end=1,
+                ),
+            ),
+        ],
+    )
+
+    assert outcomes["root"].backup_path.endswith("index.html")
+    assert outcomes["nested"].backup_path.endswith("pages/index.html")
+
+
+def test_the_search_never_offers_a_backup_as_a_candidate(checkout: Path) -> None:
+    """Backups live inside the checkout and carry the same extensions, so
+    without excluding them the search would rank a stale copy of a file and
+    send a developer to code that is no longer live."""
+    apply_patches(checkout, [("html-has-lang", _patch())])
+    assert (checkout / BACKUP_DIRECTORY).exists()  # the thing being excluded exists
+
+    listed, _ = list_source_files(checkout)
+
+    assert listed == ["index.html"]

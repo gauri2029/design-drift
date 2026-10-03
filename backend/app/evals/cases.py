@@ -31,8 +31,17 @@ class EvalCase(BaseModel):
 
 
 def load_cases(root: Path = CASES_ROOT) -> list[EvalCase]:
+    """Every case directory under `root`.
+
+    A directory without a `case.json` isn't a case and is skipped rather
+    than crashing the run. Editors, sync clients and Finder all leave
+    stray directories around (`component-app 2`), and losing the whole
+    report to one of them would be absurd.
+    """
     cases = []
     for case_dir in sorted(path for path in root.iterdir() if path.is_dir()):
+        if not (case_dir / "case.json").is_file():
+            continue
         cases.append(load_case(case_dir))
     return cases
 
