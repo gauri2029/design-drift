@@ -45,7 +45,9 @@ class Settings(BaseSettings):
     # option (see app.integrations.llm.gemini_client's docstring).
     llm_provider: str = "anthropic"
     gemini_api_key: str = ""
-    gemini_model: str = "gemini-2.5-flash"
+    # Verified against models.list() on the free tier. gemini_client falls
+    # back to a second free model when this one is oversubscribed.
+    gemini_model: str = "gemini-3.5-flash-lite"
 
     @property
     def cors_origin_list(self) -> list[str]:
