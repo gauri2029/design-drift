@@ -1,0 +1,119 @@
+# Runs the checks that already exist in this repo, and only the free ones.
+#
+# Nothing here calls an LLM or any paid service: the backend suite mocks
+# every outbound HTTP call with respx, and the eval job runs the
+# deterministic `--search-only` half. No API keys are configured, so a test
+# that started making a real call would fail rather than quietly bill.
+name: CI
+
+on:
+  # Pushes to main, plus every pull request. A branch with an open PR would
+  # otherwise run this twice for the same commit.
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  # A new push supersedes the run in flight for the same branch.
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        # The suite is written against a real Postgres (tests/conftest.py
+        # creates its own `_test` database and migrates it), so there is
+        # nothing to substitute here.
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: design_drift
+          POSTGRES_PASSWORD: design_drift
+          POSTGRES_DB: design_drift
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      # Port 5432 here, not the 55432 used locally: that offset exists to
+      # avoid colliding with a developer's native Postgres, and the runner
+      # has none. conftest.py derives the `_test` database from this.
+      DATABASE_URL: postgresql+asyncpg://design_drift:design_drift@localhost:5432/design_drift
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+
+      - name: Install dependencies
+        working-directory: backend
+        run: uv sync --locked
+
+      - name: Lint (ruff)
+        working-directory: backend
+        run: uv run ruff check app/ tests/
+
+      - name: Type check (mypy)
+        working-directory: backend
+        run: uv run mypy app/
+
+      # Eight test files drive a real browser (capture, DOM extraction,
+      # axe-core). --with-deps pulls the system libraries Chromium needs,
+      # which the runner image doesn't carry.
+      - name: Install Chromium
+        working-directory: backend
+        run: uv run playwright install --with-deps chromium
+
+      - name: Tests
+        working-directory: backend
+        run: uv run pytest -q
+
+      # Scores the deterministic retrieval path against hand-verified
+      # answers. --min-accuracy is what makes this a gate: without it the
+      # command always exits 0 and the step could never fail.
+      - name: Retrieval evals
+        working-directory: backend
+        run: uv run python -m app.evals.retrieval --search-only --min-accuracy 0.9
+
+  frontend:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Lint (eslint)
+        working-directory: frontend
+        run: npm run lint
+
+      - name: Type check (tsc)
+        working-directory: frontend
+        run: npm run typecheck
+
+      - name: Tests
+        working-directory: frontend
+        run: npm test
+
+      # Catches what tsc alone doesn't: a bad import path, or a Tailwind
+      # class that fails to compile.
+      - name: Build
+        working-directory: frontend
+        run: npm run build
