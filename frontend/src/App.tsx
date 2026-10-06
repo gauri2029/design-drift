@@ -1,44 +1,42 @@
-import { HealthStatus } from './components/HealthStatus'
 import { ProjectsPanel } from './components/ProjectsPanel'
+import { BrandMark, ThemeToggle } from './components/ui'
 
 function App() {
   return (
     <div className="min-h-screen">
-      <header className="sticky top-0 z-40 border-b border-slate-200/80 bg-white/80 backdrop-blur dark:border-slate-800/80 dark:bg-slate-950/80">
-        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-6 py-4">
+      {/* First in the tab order, visible only on focus: the rail is a long
+          list and keyboard users shouldn't walk it on every visit. */}
+      <a href="#workspace" className="skip-link">
+        Skip to the workspace
+      </a>
+
+      {/* Drifting colour blobs and grain behind everything. Fixed and
+          composited once, so the 26s animation is free. */}
+      <div className="room" aria-hidden="true" />
+
+      {/* Glass, because the work scrolls underneath it. The marketing copy
+          that used to sit below — a headline and a paragraph explaining the
+          product — is gone: it addressed someone deciding whether to use the
+          tool, in the one place reserved for someone using it. The
+          "Connected to backend" badge went for the same reason: a working
+          backend is the normal case, and a broken one surfaces as an error
+          where you tried to act. */}
+      <header className="sticky top-0 z-40 border-b border-edge bg-void/50 backdrop-blur-2xl">
+        <div className="mx-auto flex max-w-[1600px] items-center justify-between gap-3 px-6 py-3.5">
           <div className="flex items-center gap-2.5">
-            <span
-              aria-hidden="true"
-              className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 text-sm font-bold text-white shadow-sm shadow-indigo-500/30"
-            >
-              DD
+            <span className="text-accent">
+              <BrandMark className="h-6 w-6" />
             </span>
-            <span className="whitespace-nowrap text-base font-semibold tracking-tight text-slate-900 dark:text-slate-100">
+            <span className="font-display text-[17px] font-bold tracking-[-0.02em] text-ink">
               Design Drift
             </span>
           </div>
-          <HealthStatus />
+          <ThemeToggle />
         </div>
       </header>
 
-      <main className="mx-auto max-w-6xl px-6 py-10">
-        <div className="max-w-2xl">
-          <span className="inline-flex items-center rounded-full border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-xs font-medium text-indigo-700 dark:border-indigo-900 dark:bg-indigo-950 dark:text-indigo-300">
-            Design QA
-          </span>
-          <h1 className="mt-3 text-3xl font-semibold tracking-tight text-slate-900 dark:text-slate-100">
-            Autonomous AI Design QA &amp; Remediation
-          </h1>
-          <p className="mt-2 text-slate-600 dark:text-slate-400">
-            Register a Figma node and a target app URL to pixel-diff, accessibility-scan, and
-            AI-review production against its design — with autonomous agent remediation landing
-            next.
-          </p>
-        </div>
-
-        <div className="mt-8">
-          <ProjectsPanel />
-        </div>
+      <main className="mx-auto max-w-[1600px] px-6 py-8 pe-7">
+        <ProjectsPanel />
       </main>
     </div>
   )

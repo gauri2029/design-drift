@@ -1,34 +1,547 @@
 @import "tailwindcss";
 
+/* ---------------------------------------------------------------------------
+   Design Drift — design system
+   ---------------------------------------------------------------------------
+   Built from gaurimarkandey.com: Syne for display, JetBrains Mono for code,
+   and the violet / amber / coral / cyan accent family. The one departure is
+   the base — the portfolio's cool navy becomes warm charcoal and cream here,
+   because this is a tool you sit in for an hour rather than a page you read
+   once, and warmth wears better over that span.
+
+   Four accents, not one. A single accent is what makes an interface read as
+   corporate; letting coral mean "blocking", amber "worth a look", cyan
+   "information" and green "done" is both more useful and more alive.
+
+   Motion follows the portfolio's signature: things lift AND tilt, on an
+   overshoot spring, so hovering feels like nudging a physical card rather
+   than triggering a state change.
+--------------------------------------------------------------------------- */
+
+@theme {
+  --font-display: "Syne", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", monospace;
+
+  /* Warm charcoal. Hue 50 keeps a trace of amber in every grey, which is
+     what separates "warm dark" from "dark with a brown tint". */
+  --color-void: oklch(0.16 0.008 50);
+  --color-canvas: oklch(0.195 0.009 50);
+  --color-raised: oklch(0.235 0.01 50);
+  --color-raised-hi: oklch(0.275 0.012 50);
+
+  --color-edge: oklch(1 0 0 / 0.09);
+  --color-edge-hi: oklch(1 0 0 / 0.18);
+  --color-tint: oklch(1 0 0 / 0.035);
+  --color-tint-hi: oklch(1 0 0 / 0.07);
+
+  --color-ink: oklch(0.97 0.004 50);
+  --color-ink-dim: oklch(0.79 0.008 50);
+  --color-ink-faint: oklch(0.63 0.01 50);
+
+  /* The portfolio's accents, matched in oklch. */
+  --color-violet: oklch(0.65 0.21 295);
+  --color-violet-hi: oklch(0.73 0.19 295);
+  --color-violet-ink: oklch(0.15 0.03 295);
+  --color-amber: oklch(0.82 0.16 75);
+  --color-coral: oklch(0.7 0.19 5);
+  --color-cyan: oklch(0.8 0.13 200);
+  --color-green: oklch(0.78 0.15 162);
+
+  /* Role aliases, so components never name a hue directly. */
+  --color-accent: var(--color-violet);
+  --color-accent-hi: var(--color-violet-hi);
+  --color-accent-ink: var(--color-violet-ink);
+  --color-bad: var(--color-coral);
+  --color-warn: var(--color-amber);
+  --color-ok: var(--color-green);
+  --color-info: var(--color-cyan);
+
+  /* The portfolio's two curves. `spring` overshoots and settles — it is
+     what makes a hover feel like a nudge rather than a transition. */
+  --ease-soft: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
 :root {
-  color-scheme: light dark;
+  color-scheme: dark;
+  --glass-bg: oklch(0.24 0.012 50 / 0.6);
+  --glass-bg-deep: oklch(0.2 0.012 50 / 0.8);
+  --glass-rim: oklch(1 0 0 / 0.12);
+  --glass-shadow: oklch(0.1 0.01 50 / 0.7);
+  --blob-1: oklch(0.65 0.21 295 / 0.3);
+  --blob-2: oklch(0.82 0.16 75 / 0.18);
+  --blob-3: oklch(0.7 0.19 5 / 0.16);
+  --grain-opacity: 0.035;
+  --glow-strength: 0.1;
+  --shimmer: oklch(1 0 0 / 0.14);
+}
+
+/* Light is a warm cream studio, not a white page. The blobs stay — at
+   lower alpha they read as sunlight on paper, which is what keeps light
+   mode from going flat. */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    color-scheme: light;
+
+    --color-void: oklch(0.975 0.012 75);
+    --color-canvas: oklch(0.955 0.016 72);
+    --color-raised: oklch(1 0.002 75);
+    --color-raised-hi: oklch(0.985 0.008 75);
+
+    --color-edge: oklch(0.35 0.03 50 / 0.12);
+    --color-edge-hi: oklch(0.35 0.03 50 / 0.22);
+    --color-tint: oklch(1 0 0 / 0.7);
+    --color-tint-hi: oklch(1 0 0 / 1);
+
+    --color-ink: oklch(0.24 0.02 50);
+    --color-ink-dim: oklch(0.45 0.018 50);
+    --color-ink-faint: oklch(0.57 0.016 50);
+
+    --color-violet: oklch(0.52 0.23 295);
+    --color-violet-hi: oklch(0.45 0.24 295);
+    --color-violet-ink: oklch(0.99 0.004 295);
+    --color-amber: oklch(0.6 0.15 65);
+    --color-coral: oklch(0.57 0.21 10);
+    --color-cyan: oklch(0.56 0.12 210);
+    --color-green: oklch(0.55 0.13 162);
+
+    --glass-bg: oklch(1 0 0 / 0.66);
+    --glass-bg-deep: oklch(1 0 0 / 0.85);
+    --glass-rim: oklch(1 0 0 / 0.95);
+    --glass-shadow: oklch(0.45 0.05 50 / 0.14);
+    --blob-1: oklch(0.6 0.22 295 / 0.16);
+    --blob-2: oklch(0.75 0.16 70 / 0.2);
+    --blob-3: oklch(0.65 0.2 10 / 0.12);
+    --grain-opacity: 0.025;
+    --glow-strength: 0.07;
+    --shimmer: oklch(0.5 0.2 295 / 0.1);
+  }
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --color-void: oklch(0.975 0.012 75);
+  --color-canvas: oklch(0.955 0.016 72);
+  --color-raised: oklch(1 0.002 75);
+  --color-raised-hi: oklch(0.985 0.008 75);
+
+  --color-edge: oklch(0.35 0.03 50 / 0.12);
+  --color-edge-hi: oklch(0.35 0.03 50 / 0.22);
+  --color-tint: oklch(1 0 0 / 0.7);
+  --color-tint-hi: oklch(1 0 0 / 1);
+
+  --color-ink: oklch(0.24 0.02 50);
+  --color-ink-dim: oklch(0.45 0.018 50);
+  --color-ink-faint: oklch(0.57 0.016 50);
+
+  --color-violet: oklch(0.52 0.23 295);
+  --color-violet-hi: oklch(0.45 0.24 295);
+  --color-violet-ink: oklch(0.99 0.004 295);
+  --color-amber: oklch(0.6 0.15 65);
+  --color-coral: oklch(0.57 0.21 10);
+  --color-cyan: oklch(0.56 0.12 210);
+  --color-green: oklch(0.55 0.13 162);
+
+  --glass-bg: oklch(1 0 0 / 0.66);
+  --glass-bg-deep: oklch(1 0 0 / 0.85);
+  --glass-rim: oklch(1 0 0 / 0.95);
+  --glass-shadow: oklch(0.45 0.05 50 / 0.14);
+  --blob-1: oklch(0.6 0.22 295 / 0.16);
+  --blob-2: oklch(0.75 0.16 70 / 0.2);
+  --blob-3: oklch(0.65 0.2 10 / 0.12);
+  --grain-opacity: 0.025;
+  --glow-strength: 0.07;
+  --shimmer: oklch(0.5 0.2 295 / 0.1);
 }
 
 body {
   margin: 0;
-  font-feature-settings: "cv11", "ss01";
+  background-color: var(--color-void);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.6;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
-  background-color: #f8fafc;
-  background-image: radial-gradient(circle at 15% 0%, rgba(99, 102, 241, 0.06), transparent 45%);
+  transition:
+    background-color 350ms var(--ease-soft),
+    color 350ms var(--ease-soft);
 }
 
-@media (prefers-color-scheme: dark) {
-  body {
-    background-color: #020617;
-    background-image: radial-gradient(circle at 15% 0%, rgba(99, 102, 241, 0.12), transparent 45%);
+h1,
+h2,
+.font-display {
+  font-family: var(--font-display);
+  letter-spacing: -0.02em;
+}
+
+/* --- The room -----------------------------------------------------------
+   Three colour blobs drifting behind everything, plus grain. This is the
+   portfolio's bgShift/float idea: a flat background reads as dead, and a
+   slow drift gives the page a pulse without ever asking to be looked at.
+
+   Fixed and `will-change: transform`, so the layer is composited once and
+   the 26s animation costs nothing per frame. */
+.room {
+  position: fixed;
+  inset: -20%;
+  z-index: -1;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.room::before,
+.room::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+
+.room::before {
+  background:
+    radial-gradient(38rem 32rem at 18% 12%, var(--blob-1), transparent 65%),
+    radial-gradient(34rem 28rem at 82% 8%, var(--blob-2), transparent 62%),
+    radial-gradient(30rem 30rem at 62% 88%, var(--blob-3), transparent 60%);
+  animation: drift 26s var(--ease-soft) infinite alternate;
+  will-change: transform;
+}
+
+/* Grain. Breaks up the gradients so they read as light rather than as a
+   CSS gradient, and hides the banding large soft blobs produce. */
+.room::after {
+  opacity: var(--grain-opacity);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+@keyframes drift {
+  0% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(2.5%, -2%, 0) scale(1.06);
+  }
+  100% {
+    transform: translate3d(-2%, 2.5%, 0) scale(1.02);
   }
 }
 
-::selection {
-  background-color: rgba(99, 102, 241, 0.35);
+/* --- Glass --------------------------------------------------------------- */
+
+.glass {
+  background-color: var(--glass-bg);
+  backdrop-filter: blur(16px) saturate(1.6);
+  -webkit-backdrop-filter: blur(16px) saturate(1.6);
+  border: 1px solid var(--color-edge-hi);
+  box-shadow:
+    inset 0 1px 0 0 var(--glass-rim),
+    0 8px 32px var(--glass-shadow);
 }
 
-/* Slim, low-contrast scrollbar that matches the developer-tool aesthetic
-   instead of the OS default. */
+.glass-deep {
+  background-color: var(--glass-bg-deep);
+  backdrop-filter: blur(28px) saturate(1.7);
+  -webkit-backdrop-filter: blur(28px) saturate(1.7);
+  border: 1px solid var(--color-edge-hi);
+  box-shadow:
+    inset 0 1px 0 0 var(--glass-rim),
+    0 20px 60px var(--glass-shadow);
+}
+
+@supports not (backdrop-filter: blur(1px)) {
+  .glass,
+  .glass-deep {
+    background-color: var(--color-raised);
+  }
+}
+
+/* --- Tilt ---------------------------------------------------------------
+   The portfolio's signature move: lift, rotate and scale together on an
+   overshoot spring. One class so every interactive surface agrees, and the
+   rotation is tiny (0.4deg) because at list density anything larger reads
+   as broken rather than playful. */
+.tilt {
+  transition: transform 280ms var(--ease-spring);
+}
+
+.tilt:hover {
+  transform: translate3d(0, -3px, 0) rotate(-0.4deg) scale(1.008);
+}
+
+.tilt:active {
+  transform: translate3d(0, -1px, 0) scale(0.995);
+  transition-duration: 110ms;
+}
+
+/* Cards can afford a bigger gesture than list rows. */
+.tilt-lg {
+  transition: transform 320ms var(--ease-spring);
+}
+
+.tilt-lg:hover {
+  transform: translate3d(0, -6px, 0) rotate(-1deg) scale(1.02);
+}
+
+.tilt-lg:active {
+  transform: translate3d(0, -2px, 0) scale(0.99);
+  transition-duration: 120ms;
+}
+
+/* --- Cursor light --------------------------------------------------------
+   JS writes only --mx/--my; the gradient is painted by the compositor from
+   those, so there is no React render and no layout per pointer move. */
+.lit {
+  position: relative;
+  isolation: isolate;
+}
+
+.lit::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  opacity: 0;
+  transition: opacity 300ms var(--ease-soft);
+  background: radial-gradient(
+    16rem circle at var(--mx, 50%) var(--my, 50%),
+    oklch(0.7 0.2 295 / var(--glow-strength)),
+    transparent 70%
+  );
+}
+
+.lit:hover::before,
+.lit:focus-within::before {
+  opacity: 1;
+}
+
+/* --- Shimmer -------------------------------------------------------------
+   A light sweeping across a button on hover, from the portfolio's `sweep`.
+   Animates transform, not `left`, so it never triggers layout. */
+.sweep {
+  position: relative;
+  overflow: hidden;
+}
+
+.sweep::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  transform: translateX(-100%);
+  background: linear-gradient(100deg, transparent 20%, var(--shimmer) 50%, transparent 80%);
+}
+
+.sweep:hover::after {
+  animation: sweep 720ms var(--ease-soft);
+}
+
+@keyframes sweep {
+  to {
+    transform: translateX(100%);
+  }
+}
+
+/* Headline gradient that drifts. Violet into amber — the portfolio's two
+   leading accents, so the one piece of decorative colour on the page is
+   still saying something about the brand. */
+.gradient-text {
+  background: linear-gradient(
+    100deg,
+    var(--color-ink) 0%,
+    var(--color-ink) 28%,
+    var(--color-violet-hi) 48%,
+    var(--color-amber) 62%,
+    var(--color-ink) 84%
+  );
+  background-size: 250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: grad-ring 7s ease-in-out infinite;
+}
+
+@keyframes grad-ring {
+  0%,
+  100% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+}
+
+*:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 3px;
+  border-radius: 10px;
+}
+
+::selection {
+  background-color: oklch(0.65 0.21 295 / 0.3);
+}
+
+/* --- Entrances ----------------------------------------------------------- */
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 14px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+  70% {
+    transform: scale(1.14);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes breathe {
+  0%,
+  100% {
+    opacity: 0.4;
+    transform: scale(0.85);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.15);
+  }
+}
+
+/* One ring, expanding outward once. A looping pulse on a status light is a
+   cry for attention that never stops. */
+@keyframes ping-once {
+  0% {
+    opacity: 0.75;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(2.8);
+  }
+}
+
+.animate-rise {
+  animation: rise 420ms var(--ease-soft) both;
+}
+
+.animate-fade {
+  animation: fade 240ms var(--ease-soft) both;
+}
+
+.animate-pop {
+  animation: pop 440ms var(--ease-spring) both;
+}
+
+.animate-breathe {
+  animation: breathe 1.8s ease-in-out infinite;
+}
+
+.animate-ping-once {
+  animation: ping-once 950ms var(--ease-soft) forwards;
+}
+
+/* --- View transitions ---------------------------------------------------- */
+
+::view-transition-old(view),
+::view-transition-new(view) {
+  animation-duration: 280ms;
+  animation-timing-function: var(--ease-soft);
+}
+
+::view-transition-old(view) {
+  animation-name: vt-out;
+}
+
+::view-transition-new(view) {
+  animation-name: vt-in;
+}
+
+@keyframes vt-out {
+  to {
+    opacity: 0;
+    transform: translate3d(0, -8px, 0);
+  }
+}
+
+@keyframes vt-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 12px, 0);
+  }
+}
+
+/* Everything above is decoration, so removing it costs nothing and makes
+   the tool usable for people for whom motion is a barrier. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+    view-transition-name: none !important;
+  }
+
+  .tilt:hover,
+  .tilt-lg:hover {
+    transform: none;
+  }
+
+  .lit::before,
+  .sweep::after {
+    display: none;
+  }
+
+  .gradient-text {
+    animation: none;
+    background: none;
+    color: var(--color-ink);
+  }
+}
+
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  z-index: 100;
+}
+
+.skip-link:focus {
+  left: 1rem;
+  top: 1rem;
+  padding: 0.5rem 0.875rem;
+  border-radius: 10px;
+  background: var(--color-accent);
+  color: var(--color-accent-ink);
+  font-weight: 600;
+}
+
 * {
   scrollbar-width: thin;
-  scrollbar-color: rgba(100, 116, 139, 0.4) transparent;
+  scrollbar-color: var(--color-edge-hi) transparent;
 }
 
 *::-webkit-scrollbar {
@@ -37,8 +550,8 @@ body {
 }
 
 *::-webkit-scrollbar-thumb {
-  background-color: rgba(100, 116, 139, 0.4);
-  border-radius: 9999px;
-  border: 2px solid transparent;
+  background-color: var(--color-edge-hi);
+  border-radius: 999px;
+  border: 3px solid transparent;
   background-clip: content-box;
 }

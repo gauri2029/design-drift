@@ -1,59 +1,70 @@
+import { useState } from 'react'
 import { useProjects } from '../hooks/useProjects'
-import { DesignQAPanel } from './DesignQAPanel'
-import { FigmaPreview } from './FigmaPreview'
-import { ProjectForm } from './ProjectForm'
+import { NewProjectDialog } from './NewProjectDialog'
 import { ProjectList } from './ProjectList'
-import { ScanSection } from './ScanSection'
+import { Workspace } from './Workspace'
+import { Button, EmptyState, Label } from './ui'
 
+/** A rail of projects beside the workspace for the selected one.
+ *
+ * Replaces a stacked page where the registration form, the project list, the
+ * Figma preview, the QA report and the scan tool were all peers of each
+ * other. Here choosing a project is navigation; everything else is the work.
+ */
 export function ProjectsPanel() {
   const { projects, status, error, selectedProject, selectProject, submitting, createProject } =
     useProjects()
+  const [dialogOpen, setDialogOpen] = useState(false)
 
   return (
-    <div>
-      <section className="grid gap-6 lg:grid-cols-[320px_1fr]">
-        <div className="space-y-6">
-          <ProjectForm onCreate={createProject} submitting={submitting} />
-
-          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-            <h2 className="mb-2 text-sm font-semibold text-slate-900 dark:text-slate-100">
-              Projects
-            </h2>
-            {status === 'loading' && (
-              <p className="text-sm text-slate-500 dark:text-slate-400">Loading…</p>
-            )}
-            {status === 'error' && (
-              <p role="alert" className="text-sm text-red-600 dark:text-red-400">
-                {error}
-              </p>
-            )}
-            {status === 'ready' && (
-              <ProjectList
-                projects={projects}
-                selectedId={selectedProject?.id ?? null}
-                onSelect={selectProject}
-              />
-            )}
-          </div>
+    <div className="grid gap-6 lg:grid-cols-[244px_1fr]">
+      <aside className="lg:sticky lg:top-24 lg:self-start">
+        <div className="mb-3 flex items-center justify-between gap-2 px-1">
+          <Label>Projects</Label>
+          <Button size="sm" variant="ghost" onClick={() => setDialogOpen(true)}>
+            + New
+          </Button>
         </div>
 
-        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-          <h2 className="mb-4 text-sm font-semibold text-slate-900 dark:text-slate-100">
-            Figma preview
-          </h2>
-          <FigmaPreview project={selectedProject} />
-        </div>
-      </section>
+        {status === 'loading' && <p className="px-1 text-[13px] text-ink-faint">Loading…</p>}
+        {status === 'error' && (
+          <p role="alert" className="px-1 text-[13px] text-bad">
+            {error}
+          </p>
+        )}
+        {status === 'ready' && (
+          <ProjectList
+            projects={projects}
+            selectedId={selectedProject?.id ?? null}
+            onSelect={selectProject}
+          />
+        )}
+      </aside>
 
-      {/* key forces a remount on project switch, so useScans' own initial
-          state naturally resets instead of the hook resetting `status`
-          itself inside an effect. */}
-      {selectedProject && (
-        <>
-          <DesignQAPanel key={`qa-${selectedProject.id}`} project={selectedProject} />
-          <ScanSection key={selectedProject.id} project={selectedProject} />
-        </>
-      )}
+      <div id="workspace" className="min-w-0">
+        {selectedProject ? (
+          /* Remounted per project so the analyses hook starts clean rather
+             than resetting itself inside an effect. */
+          <Workspace key={selectedProject.id} project={selectedProject} />
+        ) : (
+          <EmptyState
+            title="Point this at a design"
+            body="Give it a link to a Figma frame and the page that should match it, and it will tell you where they've drifted apart."
+            action={
+              <Button variant="primary" size="lg" onClick={() => setDialogOpen(true)}>
+                New project
+              </Button>
+            }
+          />
+        )}
+      </div>
+
+      <NewProjectDialog
+        open={dialogOpen}
+        onClose={() => setDialogOpen(false)}
+        onCreate={createProject}
+        submitting={submitting}
+      />
     </div>
   )
 }

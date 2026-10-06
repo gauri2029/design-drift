@@ -6,20 +6,12 @@ import { ProjectsPanel } from './ProjectsPanel'
 const CREATED_PROJECT: Project = {
   id: 'proj-1',
   name: 'Marketing homepage',
-  figma_file_key: 'abc123',
-  figma_node_id: '1:23',
+  figma_file_key: '6vJNrp',
+  figma_node_id: '94:2143',
   target_url: 'https://example.com',
   target_selector: null,
   source_path: null,
-  figma_data: {
-    id: '1:23',
-    name: 'Button',
-    type: 'FRAME',
-    visible: true,
-    absoluteBoundingBox: { x: 0, y: 0, width: 120, height: 40 },
-    layoutMode: 'HORIZONTAL',
-    children: [],
-  },
+  figma_data: null,
   figma_screenshot_key: 'figma/proj-1/preview.png',
   figma_fetched_at: '2026-01-01T00:00:00Z',
   created_at: '2026-01-01T00:00:00Z',
@@ -31,46 +23,57 @@ describe('ProjectsPanel', () => {
     vi.unstubAllGlobals()
   })
 
-  it('registers a project and shows its Figma preview', async () => {
+  it('creates a project from a Figma link, deriving the file key and node id', async () => {
+    let posted: Record<string, unknown> | null = null
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = typeof input === 'string' ? input : input.toString()
         const method = init?.method ?? 'GET'
-
         if (url.endsWith('/api/v1/projects') && method === 'GET') {
           return { ok: true, json: async () => [] }
         }
         if (url.endsWith('/api/v1/projects') && method === 'POST') {
+          posted = JSON.parse(String(init?.body))
           return { ok: true, json: async () => CREATED_PROJECT }
         }
-        if (url.endsWith('/scans') && method === 'GET') {
-          return { ok: true, json: async () => [] }
-        }
+        if (url.includes('/design-analysis')) return { ok: true, json: async () => [] }
         throw new Error(`Unexpected fetch: ${method} ${url}`)
       }),
     )
 
     render(<ProjectsPanel />)
-
     expect(await screen.findByText(/no projects yet/i)).toBeInTheDocument()
 
-    fireEvent.change(screen.getByLabelText(/^name$/i), { target: { value: 'Marketing homepage' } })
-    fireEvent.change(screen.getByLabelText(/figma file key/i), { target: { value: 'abc123' } })
-    fireEvent.change(screen.getByLabelText(/figma node id/i), { target: { value: '1:23' } })
-    fireEvent.change(screen.getByLabelText(/target app url/i), {
+    // Creation lives in a dialog: registering is a once-per-project act,
+    // and a permanent six-field form owning the page had it backwards.
+    fireEvent.click(screen.getByRole('button', { name: /\+ new/i }))
+    const dialog = await screen.findByRole('dialog')
+
+    fireEvent.change(screen.getByLabelText(/what should we call it/i), {
+      target: { value: 'Marketing homepage' },
+    })
+    // One link instead of two fields the user would read out of it.
+    fireEvent.change(screen.getByLabelText(/link to the figma frame/i), {
+      target: { value: 'https://www.figma.com/design/6vJNrp/Site?node-id=94-2143' },
+    })
+    fireEvent.change(screen.getByLabelText(/the page it should match/i), {
       target: { value: 'https://example.com' },
     })
-    fireEvent.click(screen.getByRole('button', { name: /register project/i }))
+
+    // What it understood, before anything is submitted.
+    expect(dialog).toHaveTextContent('6vJNrp')
+    expect(dialog).toHaveTextContent('94:2143')
+
+    fireEvent.click(screen.getByRole('button', { name: /create project/i }))
 
     expect(await screen.findByRole('button', { name: /marketing homepage/i })).toBeInTheDocument()
-    expect(screen.getByText('Button')).toBeInTheDocument()
-
-    const image = screen.getByRole('img', { name: /figma render of button/i })
-    expect(image.getAttribute('src')).toContain('/api/v1/projects/proj-1/figma/screenshot')
-
-    expect(await screen.findByRole('button', { name: /run scan/i })).toBeInTheDocument()
-    expect(await screen.findByText(/no scans yet/i)).toBeInTheDocument()
+    expect(posted).toMatchObject({
+      name: 'Marketing homepage',
+      figma_file_key: '6vJNrp',
+      figma_node_id: '94:2143',
+      target_url: 'https://example.com',
+    })
   })
 
   it('shows the backend list error when loading projects fails', async () => {
