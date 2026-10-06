@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Button, BrandMark } from './ui'
+import { Button, BrandMark, ThemeToggle } from './ui'
 
 /** The sign-in and sign-up screen — one component, two modes.
  *
@@ -43,18 +43,21 @@ export function AuthScreen({
   return (
     <div className="grid min-h-screen place-items-center px-5 py-10">
       <div className="animate-rise w-full max-w-[26rem]">
-        <button
-          type="button"
-          onClick={onBack}
-          className="mb-8 inline-flex items-center gap-2.5 text-ink-dim transition-colors duration-200 hover:text-ink"
-        >
-          <span className="text-accent">
-            <BrandMark className="h-6 w-6" />
-          </span>
-          <span className="font-display text-[17px] font-bold tracking-[-0.02em]">
-            Design Drift
-          </span>
-        </button>
+        <div className="mb-8 flex items-center justify-between gap-3">
+          <button
+            type="button"
+            onClick={onBack}
+            className="inline-flex items-center gap-2.5 text-ink-dim transition-colors duration-200 hover:text-ink"
+          >
+            <span className="text-accent">
+              <BrandMark className="h-6 w-6" />
+            </span>
+            <span className="font-display text-[17px] font-bold tracking-[-0.02em]">
+              Design Drift
+            </span>
+          </button>
+          <ThemeToggle />
+        </div>
 
         <div className="glass rounded-3xl p-7">
           <h1 className="font-display text-[26px] font-bold leading-tight tracking-[-0.03em] text-ink">

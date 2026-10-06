@@ -1,4 +1,4 @@
-import { Button, BrandMark, Label } from './ui'
+import { Button, BrandMark, Label, ThemeToggle } from './ui'
 import { useCursorLight } from '../lib/motion'
 
 const REPO_URL = 'https://github.com/gauri2029/design-drift'
@@ -67,6 +67,7 @@ export function Landing({
             </span>
           </div>
           <div className="flex items-center gap-2">
+            <ThemeToggle />
             <Button variant="ghost" size="sm" onClick={onSignIn}>
               Sign in
             </Button>

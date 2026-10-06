@@ -57,6 +57,21 @@ describe('App', () => {
     expect(fetch).not.toHaveBeenCalled()
   })
 
+  it('offers the theme toggle on the landing page and on the auth screens', () => {
+    stubFetch()
+    render(<App />)
+
+    // Signed-out visitors had no way to switch themes at all: the toggle
+    // only existed in the workspace header.
+    fireEvent.click(screen.getByRole('button', { name: /switch to (light|dark) mode/i }))
+    expect(document.documentElement.dataset.theme).toBeTruthy()
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Get started' })[0])
+    expect(
+      screen.getByRole('button', { name: /switch to (light|dark) mode/i }),
+    ).toBeInTheDocument()
+  })
+
   it('opens the signup form from Get started', () => {
     stubFetch()
     render(<App />)
