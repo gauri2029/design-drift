@@ -359,6 +359,13 @@ h2,
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
+  /* Syne's terminals overshoot their advance width, and background-clip
+     crops to the layout box — without this the final glyph loses its
+     right edge. Inline-block so the padding applies, and the matching
+     negative margin keeps the word's spacing unchanged. */
+  display: inline-block;
+  padding-right: 0.12em;
+  margin-right: -0.12em;
   animation: grad-ring 7s ease-in-out infinite;
 }
 
