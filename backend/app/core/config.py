@@ -2,6 +2,10 @@ from functools import lru_cache
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# Module-level so `jwt_secret_is_default` compares against one definition
+# rather than reading the field default back out of the model.
+_DEV_JWT_SECRET = "dev-only-insecure-secret-change-me"
+
 
 class Settings(BaseSettings):
     """Application configuration, loaded from environment variables / .env."""
@@ -34,6 +38,13 @@ class Settings(BaseSettings):
     # this process can reach, then upload it".
     source_root: str = "../sources"
 
+    # Signs access tokens. The default is a development placeholder: it is
+    # checked into the repo, so any deployment keeping it would be handing
+    # out forgeable tokens. app.main refuses to start outside local without
+    # a real one rather than warning into a log nobody reads.
+    jwt_secret_key: str = _DEV_JWT_SECRET
+    access_token_expire_minutes: int = 60 * 24 * 7
+
     figma_access_token: str = ""
     figma_api_base_url: str = "https://api.figma.com/v1"
 
@@ -48,6 +59,10 @@ class Settings(BaseSettings):
     # Verified against models.list() on the free tier. gemini_client falls
     # back to a second free model when this one is oversubscribed.
     gemini_model: str = "gemini-3.5-flash-lite"
+
+    @property
+    def jwt_secret_is_default(self) -> bool:
+        return self.jwt_secret_key == _DEV_JWT_SECRET
 
     @property
     def cors_origin_list(self) -> list[str]:

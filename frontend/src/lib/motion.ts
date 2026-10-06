@@ -144,6 +144,15 @@ export function useTheme(): [Theme, () => void] {
     if (typeof document === 'undefined') return 'dark'
     const set = document.documentElement.dataset.theme
     if (set === 'light' || set === 'dark') return set
+    // A theme chosen on a previous visit outranks the OS preference —
+    // `toggle` persists one, so not reading it back here meant the choice
+    // was forgotten on every reload.
+    try {
+      const saved = localStorage.getItem('drift-theme')
+      if (saved === 'light' || saved === 'dark') return saved
+    } catch {
+      // Private browsing: fall through to the OS preference.
+    }
     return typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: light)').matches
       ? 'light'
       : 'dark'
