@@ -14,6 +14,8 @@ type Status = 'loading' | 'ready' | 'error'
 
 interface UseDesignAnalysesResult {
   latestAnalysis: DesignAnalysis | null
+  /** Every run, newest first. The Runs view needs the lot, not just [0]. */
+  analyses: DesignAnalysis[]
   status: Status
   error: string | null
   running: boolean
@@ -97,7 +99,9 @@ export function useDesignAnalyses(projectId: string): UseDesignAnalysesResult {
 
   return {
     // The list endpoint returns newest first, so [0] is the latest run.
+    // The list endpoint returns newest first, so [0] is the latest run.
     latestAnalysis: analyses[0] ?? null,
+    analyses,
     status,
     error,
     running,
