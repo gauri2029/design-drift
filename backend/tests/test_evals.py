@@ -223,3 +223,36 @@ def test_no_eval_fixture_points_at_a_real_third_party_site() -> None:
     assert offenders == [], (
         "eval fixtures must not reference real sites — use example.org. Found: " f"{offenders}"
     )
+
+
+class TestMinAccuracyGate:
+    """`--min-accuracy` is what lets CI fail on a retrieval regression.
+
+    Without it `main()` always returns 0, so the CI step would run the
+    evals, print a worse number than yesterday, and pass anyway.
+    """
+
+    def _run(self, argv: list[str], monkeypatch: pytest.MonkeyPatch) -> int:
+        from app.evals import retrieval
+
+        monkeypatch.setattr("sys.argv", ["retrieval", "--search-only", *argv])
+        return retrieval.main()
+
+    def test_passes_when_accuracy_meets_the_floor(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        assert self._run(["--min-accuracy", "0.0"], monkeypatch) == 0
+        assert "FAIL" not in capsys.readouterr().err
+
+    def test_fails_and_says_why_when_it_does_not(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        # 1.01 is unreachable, so this asserts the gate rather than today's
+        # score — a case added later must not turn this test red.
+        assert self._run(["--min-accuracy", "1.01"], monkeypatch) == 1
+        # The reason goes to stderr, where a CI log surfaces it.
+        assert "below the required" in capsys.readouterr().err
+
+    def test_without_the_flag_it_still_just_reports(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # Running it by hand to read the numbers must not start failing.
+        assert self._run([], monkeypatch) == 0

@@ -260,6 +260,14 @@ def main() -> int:
     )
     parser.add_argument("--cases", type=Path, default=None, help="directory of eval cases")
     parser.add_argument("--json", action="store_true", help="emit the full report as JSON")
+    parser.add_argument(
+        "--min-accuracy",
+        type=float,
+        default=None,
+        help="exit non-zero if accuracy falls below this fraction (e.g. 0.9). "
+        "Without it the command always succeeds, which is what you want when "
+        "reading a report by hand and not what you want in CI.",
+    )
     args = parser.parse_args()
 
     report = asyncio.run(run_with_retry(args.cases, search_only=args.search_only))
@@ -267,6 +275,14 @@ def main() -> int:
         print(json.dumps(report.model_dump(mode="json"), indent=2))
     else:
         print(format_report(report, search_only=args.search_only))
+
+    if args.min_accuracy is not None and report.accuracy < args.min_accuracy:
+        print(
+            f"\nFAIL: accuracy {report.accuracy:.0%} is below the required "
+            f"{args.min_accuracy:.0%}.",
+            file=sys.stderr,
+        )
+        return 1
     return 0
 
 
