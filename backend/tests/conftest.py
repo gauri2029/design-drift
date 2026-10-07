@@ -199,3 +199,51 @@ def mock_anthropic_by_agent(responses: dict[str, dict]):
         raise AssertionError(f"no mocked response for this agent prompt: {system_text[:160]}")
 
     return respx.post("https://api.anthropic.com/v1/messages").mock(side_effect=respond)
+
+
+# --- Accounts ---------------------------------------------------------------
+#
+# Projects belong to a user now, and every project route requires one. The
+# API tests predate accounts: they're about scans, analyses and reviews, and
+# rewriting ~64 call sites to carry a bearer token would bury what each one
+# actually asserts.
+#
+# So one autouse fixture signs every API test in as the same user. It
+# overrides `require_current_user` rather than minting a token, which skips
+# only the token decode — test_auth_api.py covers that directly. The
+# ownership filtering itself is still exercised for real, because the
+# override hands back a genuine User row whose id the service layer filters
+# on, and tests/test_project_ownership.py drives two separate users through
+# the real dependency.
+
+
+@pytest.fixture(autouse=True)
+async def signed_in_user(request):
+    """The account every API test acts as, unless marked `anonymous`."""
+    from sqlalchemy import delete
+
+    from app.api.v1.auth import require_current_user
+    from app.db.session import async_session_factory
+    from app.main import app
+    from app.models.user import User
+
+    if request.node.get_closest_marker("anonymous"):
+        yield None
+        return
+
+    user = User(email="owner@example.com", name="Owner", password_hash="not-a-real-hash")
+    async with async_session_factory() as session:
+        session.add(user)
+        await session.commit()
+        await session.refresh(user)
+
+    app.dependency_overrides[require_current_user] = lambda: user
+    try:
+        yield user
+    finally:
+        app.dependency_overrides.pop(require_current_user, None)
+        async with async_session_factory() as session:
+            # Projects cascade from the owner, so this also clears anything
+            # the test created without each test needing to know that.
+            await session.execute(delete(User).where(User.id == user.id))
+            await session.commit()

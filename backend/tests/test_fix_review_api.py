@@ -41,9 +41,24 @@ def _fix(title: str, *, no_fix: bool = False, original_code_found: bool = True) 
     }
 
 
+def _current_owner_id() -> uuid.UUID:
+    """The user conftest signed this test in as.
+
+    Read from the dependency override rather than threaded through every
+    _seed() call: the owner is incidental to what these tests assert (patch
+    application and verification), and passing it explicitly 16 times would
+    add noise to each one.
+    """
+    from app.api.v1.auth import require_current_user
+    from app.main import app
+
+    return app.dependency_overrides[require_current_user]().id
+
+
 async def _seed(fix_proposal: dict | None, *, source_path: str | None = None) -> tuple[str, str]:
     project = Project(
         id=uuid.uuid4(),
+        owner_id=_current_owner_id(),
         name="Marketing homepage",
         figma_file_key="abc123",
         figma_node_id="1:23",

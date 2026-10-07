@@ -16,6 +16,11 @@ from app.models.user import User
 
 SIGNUP = {"email": "designer@example.com", "name": "Ada", "password": "correct horse battery"}
 
+# This file tests authentication itself, so it must drive the real
+# `require_current_user` rather than conftest's signed-in override — a /me
+# test that can't return 401 isn't testing anything.
+pytestmark = pytest.mark.anonymous
+
 
 @pytest.fixture(autouse=True)
 async def _clean_users():
@@ -162,10 +167,17 @@ async def test_signup_rejects_a_short_password_and_a_malformed_email():
     assert malformed.status_code == 422
 
 
-async def test_existing_routes_still_work_without_a_token():
-    """The whole point of this slice: nothing that worked is now gated."""
+async def test_project_routes_require_a_token_and_health_does_not():
+    """Inverted deliberately when projects gained an owner.
+
+    This used to assert that /projects answered without a token — true when
+    accounts gated only the frontend. Ownership is the change that makes it
+    false, so the assertion flips rather than being deleted: it's the thing
+    that would catch the gate being removed again.
+    """
     async with await _client() as client:
-        assert (await client.get("/api/v1/projects")).status_code == 200
+        assert (await client.get("/api/v1/projects")).status_code == 401
+        # Health stays open: a readiness probe has no account.
         assert (await client.get("/api/v1/health")).status_code == 200
 
 

@@ -8,6 +8,7 @@ import {
   type WheelEvent,
 } from 'react'
 import { Button } from './ui'
+import { useAuthedImage } from '../lib/authedImage'
 
 export type CanvasMode = 'reveal' | 'split' | 'diff'
 
@@ -24,9 +25,9 @@ export type CanvasMode = 'reveal' | 'split' | 'diff'
  * for reading two long pages together; diff for the computed mismatch map.
  */
 export function DriftCanvas({
-  designSrc,
-  productionSrc,
-  diffSrc,
+  designSrc: designUrl,
+  productionSrc: productionUrl,
+  diffSrc: diffUrl,
   mismatch,
   mode,
   onModeChange,
@@ -38,6 +39,13 @@ export function DriftCanvas({
   mode: CanvasMode
   onModeChange: (mode: CanvasMode) => void
 }) {
+  // The captures are owner-gated, so they're fetched with the token and
+  // handed to <img> as blob URLs. Resolved once here rather than per tag:
+  // the same three sources are rendered by four different <img>s below,
+  // and fetching each one per tag would download them twice.
+  const designSrc = useAuthedImage(designUrl) ?? ''
+  const productionSrc = useAuthedImage(productionUrl) ?? ''
+  const diffSrc = useAuthedImage(diffUrl) ?? undefined
   const [zoom, setZoom] = useState(1)
   const [reveal, setReveal] = useState(50)
   const stage = useRef<HTMLDivElement>(null)
@@ -90,7 +98,10 @@ export function DriftCanvas({
   const modes: { id: CanvasMode; label: string; enabled: boolean }[] = [
     { id: 'reveal', label: 'Reveal', enabled: true },
     { id: 'split', label: 'Split', enabled: true },
-    { id: 'diff', label: 'Diff', enabled: Boolean(diffSrc) },
+    // Keyed on the URL, not the fetched blob: whether a diff exists is
+    // known immediately, while its bytes arrive a moment later — and a tab
+    // that vanishes and returns reads as a glitch.
+    { id: 'diff', label: 'Diff', enabled: Boolean(diffUrl) },
   ]
 
   return (

@@ -165,6 +165,28 @@ describe('App', () => {
     expect(alert).not.toHaveTextContent('object')
   })
 
+  it('sends the stored token on project requests', async () => {
+    localStorage.setItem('design-drift.token', 'a-token')
+    const seen: Record<string, string | undefined> = {}
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = typeof input === 'string' ? input : input.toString()
+        const headers = new Headers(init?.headers)
+        if (url.includes('/projects')) seen.projects = headers.get('Authorization') ?? undefined
+        if (url.includes('/auth/me')) return { ok: true, status: 200, json: async () => USER }
+        return { ok: true, status: 200, json: async () => [] }
+      }),
+    )
+    go('/app')
+    render(<App />)
+
+    await screen.findByText('Projects')
+    // Projects are owner-scoped now; without this header the backend 401s
+    // and the workspace renders empty for a signed-in user.
+    expect(seen.projects).toBe('Bearer a-token')
+  })
+
   it('restores a session from a stored token', async () => {
     localStorage.setItem('design-drift.token', 'a-token')
     stubFetch({ '/auth/me': () => ({ ok: true, status: 200, json: async () => USER }) })
