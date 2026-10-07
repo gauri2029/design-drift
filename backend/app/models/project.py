@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, func
+from sqlalchemy import DateTime, ForeignKey, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -20,6 +20,21 @@ class Project(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(nullable=False)
+
+    # The project's owner. A plain column rather than a membership table:
+    # one owner is what the product does today, and a join table with a
+    # single row per project would be machinery for a feature that doesn't
+    # exist. Sharing later means adding `project_members` and widening the
+    # ownership check in app.services.projects — the queries already route
+    # through there, so nothing outside that module would need to change.
+    #
+    # Indexed because every project read filters on it.
+    owner_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
 
     figma_file_key: Mapped[str] = mapped_column(nullable=False)
     figma_node_id: Mapped[str] = mapped_column(nullable=False)

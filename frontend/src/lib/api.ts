@@ -1,3 +1,5 @@
+import { authHeader } from './auth'
+
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000'
 
 export interface HealthResponse {
@@ -6,7 +8,7 @@ export interface HealthResponse {
 }
 
 export async function fetchHealth(): Promise<HealthResponse> {
-  const response = await fetch(`${API_BASE_URL}/api/v1/health`)
+  const response = await fetch(`${API_BASE_URL}/api/v1/health`, { headers: authHeader() })
 
   if (!response.ok) {
     throw new Error(`Health check failed with status ${response.status}`)
@@ -63,7 +65,7 @@ export interface ProjectCreateInput {
 }
 
 export async function fetchProjects(): Promise<Project[]> {
-  const response = await fetch(`${API_BASE_URL}/api/v1/projects`)
+  const response = await fetch(`${API_BASE_URL}/api/v1/projects`, { headers: authHeader() })
 
   if (!response.ok) {
     throw new Error(`Failed to list projects (${response.status})`)
@@ -75,7 +77,7 @@ export async function fetchProjects(): Promise<Project[]> {
 export async function createProject(input: ProjectCreateInput): Promise<Project> {
   const response = await fetch(`${API_BASE_URL}/api/v1/projects`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...authHeader() },
     body: JSON.stringify(input),
   })
 
@@ -160,7 +162,7 @@ export interface Scan {
 }
 
 export async function fetchScans(projectId: string): Promise<Scan[]> {
-  const response = await fetch(`${API_BASE_URL}/api/v1/projects/${projectId}/scans`)
+  const response = await fetch(`${API_BASE_URL}/api/v1/projects/${projectId}/scans`, { headers: authHeader() })
 
   if (!response.ok) {
     throw new Error(`Failed to list scans (${response.status})`)
@@ -172,7 +174,7 @@ export async function fetchScans(projectId: string): Promise<Scan[]> {
 export async function createScan(projectId: string, breakpoint?: ScanMode): Promise<Scan> {
   const response = await fetch(`${API_BASE_URL}/api/v1/projects/${projectId}/scans`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...authHeader() },
     body: JSON.stringify(breakpoint ? { breakpoint } : {}),
   })
 
@@ -187,6 +189,7 @@ export async function createScan(projectId: string, breakpoint?: ScanMode): Prom
 export async function createScansAtAllBreakpoints(projectId: string): Promise<Scan[]> {
   const response = await fetch(`${API_BASE_URL}/api/v1/projects/${projectId}/scans/breakpoints`, {
     method: 'POST',
+    headers: authHeader(),
   })
 
   if (!response.ok) {
@@ -243,6 +246,7 @@ export interface Review {
 export async function fetchReviews(projectId: string, scanId: string): Promise<Review[]> {
   const response = await fetch(
     `${API_BASE_URL}/api/v1/projects/${projectId}/scans/${scanId}/reviews`,
+    { headers: authHeader() },
   )
 
   if (!response.ok) {
@@ -255,7 +259,7 @@ export async function fetchReviews(projectId: string, scanId: string): Promise<R
 export async function createReview(projectId: string, scanId: string): Promise<Review> {
   const response = await fetch(
     `${API_BASE_URL}/api/v1/projects/${projectId}/scans/${scanId}/reviews`,
-    { method: 'POST' },
+    { method: 'POST', headers: authHeader() },
   )
 
   if (!response.ok) {
@@ -384,7 +388,7 @@ export interface DesignAnalysis {
 }
 
 export async function fetchDesignAnalyses(projectId: string): Promise<DesignAnalysis[]> {
-  const response = await fetch(`${API_BASE_URL}/api/v1/projects/${projectId}/design-analysis`)
+  const response = await fetch(`${API_BASE_URL}/api/v1/projects/${projectId}/design-analysis`, { headers: authHeader() })
 
   if (!response.ok) {
     throw new Error(`Failed to list design analyses (${response.status})`)
@@ -454,7 +458,7 @@ export async function reviewDesignAnalysisFixes(
     `${API_BASE_URL}/api/v1/projects/${projectId}/design-analysis/${analysisId}/fix-review`,
     {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...authHeader() },
       body: JSON.stringify({ decisions }),
     },
   )
@@ -492,7 +496,7 @@ export async function applyDesignAnalysisFixes(
 ): Promise<DesignAnalysis> {
   const response = await fetch(
     `${API_BASE_URL}/api/v1/projects/${projectId}/design-analysis/${analysisId}/apply`,
-    { method: 'POST' },
+    { method: 'POST', headers: authHeader() },
   )
 
   if (!response.ok) {
@@ -542,7 +546,7 @@ export async function verifyDesignAnalysis(
     `${API_BASE_URL}/api/v1/projects/${projectId}/design-analysis/${analysisId}/verify`,
     {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...authHeader() },
       body: JSON.stringify({ target_url: targetUrl || null }),
     },
   )
@@ -583,7 +587,7 @@ export async function streamDesignAnalysis(
 ): Promise<DesignAnalysis> {
   const response = await fetch(
     `${API_BASE_URL}/api/v1/projects/${projectId}/design-analysis/stream`,
-    { method: 'POST' },
+    { method: 'POST', headers: authHeader() },
   )
 
   if (!response.ok || !response.body) {

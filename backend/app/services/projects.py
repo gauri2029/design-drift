@@ -22,7 +22,7 @@ from app.schemas.project import ProjectCreate
 
 
 async def create_project(
-    db: AsyncSession, payload: ProjectCreate, storage: StorageBackend
+    db: AsyncSession, payload: ProjectCreate, storage: StorageBackend, owner_id: UUID
 ) -> Project:
     """Register a project and synchronously fetch/store its Figma data.
 
@@ -36,6 +36,7 @@ async def create_project(
     half-registered state.
     """
     project = Project(
+        owner_id=owner_id,
         name=payload.name,
         figma_file_key=payload.figma_file_key,
         figma_node_id=payload.figma_node_id,
@@ -53,13 +54,31 @@ async def create_project(
     return project
 
 
-async def list_projects(db: AsyncSession) -> list[Project]:
-    result = await db.execute(select(Project).order_by(Project.created_at.desc()))
+async def list_projects(db: AsyncSession, owner_id: UUID) -> list[Project]:
+    result = await db.execute(
+        select(Project).where(Project.owner_id == owner_id).order_by(Project.created_at.desc())
+    )
     return list(result.scalars().all())
 
 
-async def get_project(db: AsyncSession, project_id: UUID) -> Project | None:
-    return await db.get(Project, project_id)
+async def get_project(db: AsyncSession, project_id: UUID, owner_id: UUID) -> Project | None:
+    """One of `owner_id`'s projects, or None.
+
+    `owner_id` is required rather than optional so that forgetting it is a
+    type error instead of a silent authorization hole — the whole point of
+    this function is that no caller can accidentally read across accounts.
+
+    Returns None for "someone else's project" as well as for "no such
+    project", so callers 404 both. A 403 would confirm the id exists,
+    which tells an attacker holding a guessed UUID that they guessed right.
+
+    When sharing arrives this is the one query that changes: the ownership
+    test widens to "owns it OR is a member", and every route keeps working.
+    """
+    project = await db.get(Project, project_id)
+    if project is None or project.owner_id != owner_id:
+        return None
+    return project
 
 
 async def _fetch_and_store_figma_data(project: Project, storage: StorageBackend) -> None:

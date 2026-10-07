@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Response, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.v1.auth import require_current_user
 from app.db.session import get_db
 from app.integrations.axe.exceptions import AccessibilityScanError
 from app.integrations.llm.exceptions import LLMNotConfiguredError, LLMResponseError
@@ -13,6 +14,7 @@ from app.integrations.playwright.exceptions import PlaywrightCaptureError
 from app.integrations.storage.base import StorageBackend
 from app.integrations.storage.local import get_storage_backend
 from app.models.project import Project
+from app.models.user import User
 from app.schemas.design_analysis import DesignAnalysisRead
 from app.schemas.fix_review import FixReviewRequest
 from app.schemas.verification import VerificationRequest
@@ -30,8 +32,14 @@ from app.tools.repo_search import SourceNotAccessibleError
 router = APIRouter(prefix="/projects/{project_id}/design-analysis", tags=["design-analysis"])
 
 
-async def _get_project_or_404(project_id: UUID, db: AsyncSession) -> Project:
-    project = await projects_service.get_project(db, project_id)
+async def _get_project_or_404(project_id: UUID, db: AsyncSession, owner_id: UUID) -> Project:
+    """The caller's project, or 404.
+
+    Someone else's project is a 404 rather than a 403: a 403 would confirm
+    the id names a real project, which is exactly what a guessed UUID is
+    trying to find out.
+    """
+    project = await projects_service.get_project(db, project_id, owner_id=owner_id)
     if project is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="project not found")
     return project
@@ -42,8 +50,9 @@ async def create_design_analysis(
     project_id: UUID,
     db: AsyncSession = Depends(get_db),
     storage: StorageBackend = Depends(get_storage_backend),
+    user: User = Depends(require_current_user),
 ) -> DesignAnalysisRead:
-    project = await _get_project_or_404(project_id, db)
+    project = await _get_project_or_404(project_id, db, user.id)
     try:
         analysis = await design_analysis_service.create_design_analysis(db, project, storage)
     except ProjectNotAnalyzableError as exc:
@@ -66,9 +75,11 @@ async def create_design_analysis(
 
 @router.get("", response_model=list[DesignAnalysisRead])
 async def list_design_analyses(
-    project_id: UUID, db: AsyncSession = Depends(get_db)
+    project_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_current_user),
 ) -> list[DesignAnalysisRead]:
-    await _get_project_or_404(project_id, db)
+    await _get_project_or_404(project_id, db, user.id)
     analyses = await design_analysis_service.list_design_analyses(db, project_id)
     return [DesignAnalysisRead.model_validate(analysis) for analysis in analyses]
 
@@ -79,8 +90,9 @@ async def get_design_analysis_production_screenshot(
     design_analysis_id: UUID,
     db: AsyncSession = Depends(get_db),
     storage: StorageBackend = Depends(get_storage_backend),
+    user: User = Depends(require_current_user),
 ) -> Response:
-    await _get_project_or_404(project_id, db)
+    await _get_project_or_404(project_id, db, user.id)
     analysis = await design_analysis_service.get_design_analysis(db, project_id, design_analysis_id)
     if analysis is None or analysis.production_screenshot_key is None:
         raise HTTPException(
@@ -97,8 +109,9 @@ async def get_design_analysis_diff_image(
     design_analysis_id: UUID,
     db: AsyncSession = Depends(get_db),
     storage: StorageBackend = Depends(get_storage_backend),
+    user: User = Depends(require_current_user),
 ) -> Response:
-    await _get_project_or_404(project_id, db)
+    await _get_project_or_404(project_id, db, user.id)
     analysis = await design_analysis_service.get_design_analysis(db, project_id, design_analysis_id)
     if analysis is None or analysis.diff_image_key is None:
         raise HTTPException(
@@ -113,13 +126,14 @@ async def review_design_analysis_fixes(
     design_analysis_id: UUID,
     request: FixReviewRequest,
     db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_current_user),
 ) -> DesignAnalysisRead:
     """The human-review pause in docs/architecture.md's workflow.
 
     PUT, not POST: a review is one current answer per run, and a reviewer
     changing their mind replaces it rather than adding a second one.
     """
-    await _get_project_or_404(project_id, db)
+    await _get_project_or_404(project_id, db, user.id)
     analysis = await design_analysis_service.get_design_analysis(db, project_id, design_analysis_id)
     if analysis is None:
         raise HTTPException(
@@ -139,6 +153,7 @@ async def apply_design_analysis_fixes(
     project_id: UUID,
     design_analysis_id: UUID,
     db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_current_user),
 ) -> DesignAnalysisRead:
     """Write this run's approved patches into the project's source checkout.
 
@@ -146,7 +161,7 @@ async def apply_design_analysis_fixes(
     being set. It writes files and nothing else — no git, ever
     (docs/principles.md #5).
     """
-    project = await _get_project_or_404(project_id, db)
+    project = await _get_project_or_404(project_id, db, user.id)
     analysis = await design_analysis_service.get_design_analysis(db, project_id, design_analysis_id)
     if analysis is None:
         raise HTTPException(
@@ -168,6 +183,7 @@ async def verify_design_analysis(
     request: VerificationRequest | None = None,
     db: AsyncSession = Depends(get_db),
     storage: StorageBackend = Depends(get_storage_backend),
+    user: User = Depends(require_current_user),
 ) -> DesignAnalysisRead:
     """Re-measure the page and judge whether the applied patches worked.
 
@@ -175,7 +191,7 @@ async def verify_design_analysis(
     workflow, so it's an explicit action rather than something that
     follows applying automatically.
     """
-    project = await _get_project_or_404(project_id, db)
+    project = await _get_project_or_404(project_id, db, user.id)
     analysis = await design_analysis_service.get_design_analysis(db, project_id, design_analysis_id)
     if analysis is None:
         raise HTTPException(
@@ -208,8 +224,9 @@ async def get_verification_production_screenshot(
     design_analysis_id: UUID,
     db: AsyncSession = Depends(get_db),
     storage: StorageBackend = Depends(get_storage_backend),
+    user: User = Depends(require_current_user),
 ) -> Response:
-    await _get_project_or_404(project_id, db)
+    await _get_project_or_404(project_id, db, user.id)
     analysis = await design_analysis_service.get_design_analysis(db, project_id, design_analysis_id)
     if analysis is None or analysis.verification_screenshot_key is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="verification not found")
@@ -224,8 +241,9 @@ async def get_verification_diff_image(
     design_analysis_id: UUID,
     db: AsyncSession = Depends(get_db),
     storage: StorageBackend = Depends(get_storage_backend),
+    user: User = Depends(require_current_user),
 ) -> Response:
-    await _get_project_or_404(project_id, db)
+    await _get_project_or_404(project_id, db, user.id)
     analysis = await design_analysis_service.get_design_analysis(db, project_id, design_analysis_id)
     if analysis is None or analysis.verification_diff_image_key is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="verification not found")
@@ -257,6 +275,7 @@ async def stream_design_analysis(
     project_id: UUID,
     db: AsyncSession = Depends(get_db),
     storage: StorageBackend = Depends(get_storage_backend),
+    user: User = Depends(require_current_user),
 ) -> StreamingResponse:
     """The same run as POST "", streamed as it happens.
 
@@ -274,7 +293,7 @@ async def stream_design_analysis(
     since sent. The client has to read errors off the stream.
     """
 
-    project = await _get_project_or_404(project_id, db)
+    project = await _get_project_or_404(project_id, db, user.id)
 
     async def events() -> AsyncIterator[str]:
         try:

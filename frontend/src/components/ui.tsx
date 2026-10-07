@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from 'react'
+import { useAuthedImage } from '../lib/authedImage'
 import { useCountUp, useMagnetic, useTheme } from '../lib/motion'
 
 /** Shared primitives, so the material, radii and motion are defined once
@@ -179,8 +180,12 @@ export function Thumb({
   // created project gets its capture moments later, so a changed src must
   // retry, and this does that without a render cascade.
   const [failedSrc, setFailedSrc] = useState<string | null>(null)
+  // Screenshots are owner-gated, so an <img> pointed straight at the API
+  // would 401 — the bytes come through fetch with the token instead.
+  const objectUrl = useAuthedImage(src)
 
-  if (failedSrc === src) {
+  // No bytes yet, or none coming: the same placeholder serves both.
+  if (failedSrc === src || !objectUrl) {
     return (
       <div
         className={`grid place-items-center bg-raised text-ink-faint/50 ${className}`}
@@ -194,7 +199,7 @@ export function Thumb({
 
   return (
     <img
-      src={src}
+      src={objectUrl}
       alt={alt}
       loading="lazy"
       onError={() => setFailedSrc(src)}
