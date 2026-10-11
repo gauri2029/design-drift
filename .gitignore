@@ -41,3 +41,9 @@ samples/**/*.png
 
 # Local checkouts of target apps the Code Analysis Agent reads (symlinks).
 sources/
+
+# Cloned GitHub repositories, one checkout per analysis run. Third-party
+# code that must never enter this repository's history.
+workspaces/
+# A GitHub App private key. Never commit this.
+*.private-key.pem

@@ -38,6 +38,23 @@ class Settings(BaseSettings):
     # this process can reach, then upload it".
     source_root: str = "../sources"
 
+    # Where cloned GitHub repositories land, one directory per analysis run.
+    # Separate from source_root because the trust model differs: sources/ is
+    # something a developer put there by hand, this is whatever a third
+    # party's repository contains. Gitignored, and confined the same way.
+    workspace_root: str = "../workspaces"
+
+    # --- GitHub App (read-only; see app.integrations.github) -----------------
+    # Empty by default: without an App configured, the GitHub endpoints
+    # report that it's unconfigured and the sources/ workflow is unaffected.
+    github_app_id: str = ""
+    # PEM file for the App's private key, used to sign the short-lived JWT
+    # that mints installation tokens. A path rather than the key itself so
+    # the key never passes through an env var that might get logged.
+    github_app_private_key_path: str = ""
+    # The App's URL slug, for building the "Install" link.
+    github_app_slug: str = ""
+
     # Signs access tokens. The default is a development placeholder: it is
     # checked into the repo, so any deployment keeping it would be handing
     # out forgeable tokens. app.main refuses to start outside local without

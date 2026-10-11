@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react'
 import type { ProjectCreateInput } from '../lib/api'
 import { parseFigmaUrl } from '../lib/figmaUrl'
 import { Button, Chevron, Label } from './ui'
+import { GitHubSource, type GitHubSelection } from './GitHubSource'
 
 /** Creating a project, as a dialog and as three questions.
  *
@@ -30,6 +31,7 @@ export function NewProjectDialog({
   const [figmaUrl, setFigmaUrl] = useState('')
   const [targetUrl, setTargetUrl] = useState('')
   const [sourcePath, setSourcePath] = useState('')
+  const [github, setGithub] = useState<GitHubSelection | null>(null)
   const [selector, setSelector] = useState('')
   const [advanced, setAdvanced] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -67,7 +69,11 @@ export function NewProjectDialog({
         // backend reads null as "not configured", and "" would resolve to
         // the source root itself.
         target_selector: selector.trim() || undefined,
-        source_path: sourcePath.trim() || undefined,
+        // GitHub and a local path are mutually exclusive — the backend
+        // rejects both, so the picker wins where one is chosen.
+        source_path: github ? undefined : sourcePath.trim() || undefined,
+        github_repo_full_name: github?.repoFullName,
+        github_branch: github?.branch,
       })
       onClose()
       setName('')
@@ -75,6 +81,7 @@ export function NewProjectDialog({
       setTargetUrl('')
       setSelector('')
       setSourcePath('')
+      setGithub(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not create that project')
     }
@@ -138,6 +145,11 @@ export function NewProjectDialog({
             required
           />
 
+          <div className="space-y-2">
+            <span className="block text-[13px] font-medium text-ink-dim">Source code</span>
+            <GitHubSource value={github} onChange={setGithub} />
+          </div>
+
           <div className="overflow-hidden rounded-2xl border border-edge">
             <button
               type="button"
@@ -151,13 +163,15 @@ export function NewProjectDialog({
             </button>
             {advanced && (
               <div className="animate-fade space-y-5 border-t border-edge p-4">
-                <Field
-                  label="Source folder"
-                  value={sourcePath}
-                  onChange={setSourcePath}
-                  placeholder="marketing-site"
-                  hint="A folder inside SOURCE_ROOT. Without it, issues can be found but not traced to code or fixed."
-                />
+                {!github && (
+                  <Field
+                    label="Source folder"
+                    value={sourcePath}
+                    onChange={setSourcePath}
+                    placeholder="marketing-site"
+                    hint="A folder inside SOURCE_ROOT, for local development. Without it (or a repository above), issues can be found but not traced to code or fixed."
+                  />
+                )}
                 <Field
                   label="CSS selector"
                   value={selector}

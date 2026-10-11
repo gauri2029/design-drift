@@ -49,6 +49,17 @@ class Project(Base):
     # it just can't map findings onto files (see app.agents.code_analysis).
     source_path: Mapped[str | None] = mapped_column(nullable=True)
 
+    # --- Source provider -----------------------------------------------
+    # A project draws its source from GitHub *or* from a local source_path,
+    # never both. Both nullable: a project can have neither and still run
+    # every inspection agent — it just can't map findings onto files.
+    #
+    # No token and no installation id here: the installation is looked up
+    # through the owner's linked installations at use time, so revoking a
+    # link immediately cuts off every project that relied on it.
+    github_repo_full_name: Mapped[str | None] = mapped_column(nullable=True)
+    github_branch: Mapped[str | None] = mapped_column(nullable=True)
+
     # Raw-ish node data from the Figma API (name, styles, layout, hierarchy),
     # serialized from app.integrations.figma.types.FigmaNode.
     figma_data: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)

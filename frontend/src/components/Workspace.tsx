@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useDesignAnalyses } from '../hooks/useDesignAnalyses'
 import {
   designAnalysisDiffUrl,
+  downloadAnalysisPatch,
   designAnalysisProductionUrl,
   projectScreenshotUrl,
   verificationProductionUrl,
@@ -487,6 +488,19 @@ function Fix({
                     onClick={() => void act(() => onApply(analysis.id))}
                   >
                     Apply again
+                  </Button>
+                )}
+                {written > 0 && (
+                  /* Design Drift never pushes or opens a PR, so this is how
+                     a change reaches a repository: the user applies it. */
+                  <Button
+                    variant="ghost"
+                    disabled={busy}
+                    onClick={() =>
+                      void act(() => downloadAnalysisPatch(project.id, analysis.id))
+                    }
+                  >
+                    Download patch
                   </Button>
                 )}
               </div>

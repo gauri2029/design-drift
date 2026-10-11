@@ -43,6 +43,8 @@ async def create_project(
         target_url=str(payload.target_url),
         target_selector=payload.target_selector,
         source_path=payload.source_path,
+        github_repo_full_name=payload.github_repo_full_name,
+        github_branch=payload.github_branch,
     )
     db.add(project)
     await db.flush()  # assigns project.id, used below as a storage key

@@ -30,11 +30,15 @@ from app.agents.types import Patch
 from app.core.config import get_settings
 from app.graph.state import DesignQAState
 from app.graph.workflow import run_design_qa, stream_design_qa
+from app.integrations.github import client as github_client
 from app.integrations.storage.base import StorageBackend
 from app.models.design_analysis import DesignAnalysis
 from app.models.project import Project
 from app.schemas.fix_application import AppliedFix, FixApplication
 from app.schemas.fix_review import FixDecision, FixDecisionItem, FixReview
+from app.services import github as github_service
+from app.services.workspace import reset as reset_workspace
+from app.services.workspace import workspace_for
 from app.tools.apply_patch import apply_patches
 from app.tools.repo_search import resolve_source_root
 
@@ -65,8 +69,13 @@ class FixReviewError(Exception):
 async def create_design_analysis(
     db: AsyncSession, project: Project, storage: StorageBackend
 ) -> DesignAnalysis:
-    final_state = await run_design_qa(_initial_state(project, storage))
-    return await _persist(db, project, storage, final_state)
+    # The id is minted here rather than at persist time because a GitHub
+    # checkout is placed at {project}/{analysis}/ and so needs the id
+    # before the run, not after it.
+    analysis_id = uuid4()
+    initial_state, commit_sha = await _prepare(db, project, storage, analysis_id)
+    final_state = await run_design_qa(initial_state)
+    return await _persist(db, project, storage, final_state, analysis_id, commit_sha)
 
 
 async def stream_design_analysis(
@@ -79,21 +88,31 @@ async def stream_design_analysis(
     the two can't drift into producing different results — only the
     waiting differs.
     """
-    initial_state = _initial_state(project, storage)
+    analysis_id = uuid4()
+    initial_state, commit_sha = await _prepare(db, project, storage, analysis_id)
     final_state = initial_state
 
     async for node, state_so_far in stream_design_qa(initial_state):
         final_state = state_so_far
         yield node
 
-    yield await _persist(db, project, storage, final_state)
+    yield await _persist(db, project, storage, final_state, analysis_id, commit_sha)
 
 
-def _initial_state(project: Project, storage: StorageBackend) -> DesignQAState:
+async def _prepare(
+    db: AsyncSession, project: Project, storage: StorageBackend, analysis_id: UUID
+) -> tuple[DesignQAState, str | None]:
+    """The state a run starts from, plus the commit it will have analyzed.
+
+    Returns a SHA only for a GitHub-backed project; a local source_path has
+    no commit to record, and sources/ keeps working exactly as before.
+    """
     if project.figma_screenshot_key is None:
         raise ProjectNotAnalyzableError(
             "project has no Figma screenshot yet (registration may have failed)"
         )
+
+    source_root, commit_sha = await _resolve_source(db, project, analysis_id)
 
     return DesignQAState(
         project_id=project.id,
@@ -105,12 +124,17 @@ def _initial_state(project: Project, storage: StorageBackend) -> DesignQAState:
         # Code Analysis node, so a bad path fails before any paid LLM call
         # or browser launch happens — and so nodes never handle a raw
         # user-supplied path themselves.
-        source_root=_resolve_source_root(project),
-    )
+        source_root=source_root,
+    ), commit_sha
 
 
 async def _persist(
-    db: AsyncSession, project: Project, storage: StorageBackend, final_state: DesignQAState
+    db: AsyncSession,
+    project: Project,
+    storage: StorageBackend,
+    final_state: DesignQAState,
+    analysis_id: UUID,
+    commit_sha: str | None,
 ) -> DesignAnalysis:
     if final_state.error is not None:
         raise ProjectNotAnalyzableError(final_state.error)
@@ -125,7 +149,6 @@ async def _persist(
     assert final_state.accessibility_interpretation is not None
     assert final_state.aggregated_findings is not None
 
-    analysis_id = uuid4()
     production_screenshot_key = f"design-analyses/{analysis_id}/production.png"
     diff_image_key = f"design-analyses/{analysis_id}/diff.png"
     storage.save(production_screenshot_key, final_state.production_screenshot)
@@ -137,6 +160,7 @@ async def _persist(
         project_id=project.id,
         model=settings.llm_model,
         result=final_state.design_analysis.model_dump(mode="json"),
+        source_commit_sha=commit_sha,
         production_screenshot_key=production_screenshot_key,
         # What that screenshot was of, fixed at run time — Project.target_url
         # is editable, so reading it back later could describe a page this
@@ -259,7 +283,7 @@ async def apply_fix_review(
     if not approved:
         raise FixApplicationError("no patches on this run have been approved yet")
 
-    source_root = _resolve_source_root(project)
+    source_root = applied_source_root(project, analysis)
     if source_root is None:
         raise FixApplicationError(
             "this project has no source checkout configured, so there is nothing to apply to"
@@ -323,16 +347,86 @@ def _approved_patches(
     return patches
 
 
-def _resolve_source_root(project: Project) -> Path | None:
-    """None when the project has no source checkout configured.
+async def _resolve_source(
+    db: AsyncSession, project: Project, analysis_id: UUID
+) -> tuple[Path | None, str | None]:
+    """Where this run reads source from, and the commit if there is one.
 
-    A configured-but-unusable path is a different case and raises: it's a
-    misconfiguration the user should hear about, not something to silently
-    treat as "no source available" and skip past.
+    The single place that knows a project can be backed by GitHub or by a
+    local path. Everything downstream — the graph state, the Code Analysis
+    agent, the Fix agent, apply_patch — receives a plain directory and
+    neither knows nor cares which provider produced it. That is what keeps
+    the sources/ workflow working unchanged.
+
+    Resolved before the run, so a bad path or an unreachable repository
+    fails before any paid LLM call or browser launch.
     """
-    if not project.source_path:
-        return None
-    return resolve_source_root(project.source_path)
+    if project.github_repo_full_name:
+        sha = await _clone_github_source(db, project, analysis_id)
+        return _workspace_checkout(project, analysis_id), sha
+    if project.source_path:
+        return resolve_source_root(project.source_path), None
+    # Neither configured is legitimate: every inspection agent still runs,
+    # the run just can't map findings onto files.
+    return None, None
+
+
+def _workspace_checkout(project: Project, analysis_id: UUID) -> Path:
+    return workspace_for(project.id, analysis_id)
+
+
+async def _clone_github_source(db: AsyncSession, project: Project, analysis_id: UUID) -> str:
+    """Clone the project's repository for this run, returning the commit SHA.
+
+    The installation is resolved through the project *owner's* links rather
+    than stored on the project, so unlinking an installation immediately
+    stops every project that relied on it.
+    """
+    full_name = project.github_repo_full_name
+    assert full_name is not None  # guarded by the caller
+
+    installation_id = await github_service.installation_for_repository(
+        db, project.owner_id, full_name
+    )
+    # Re-checked at run time, not only when the repository was chosen: a
+    # repository can be flipped to private after a project is created.
+    repository = await github_client.get_repository(installation_id, full_name)
+    github_client.assert_analyzable(repository)
+
+    destination = _workspace_checkout(project, analysis_id)
+    reset_workspace(destination)
+    return await github_client.clone(
+        installation_id=installation_id,
+        full_name=full_name,
+        branch=project.github_branch or str(repository.get("default_branch") or "main"),
+        destination=destination,
+    )
+
+
+def applied_source_root(project: Project, analysis: DesignAnalysis) -> Path | None:
+    """The checkout a patch should be written into.
+
+    Deliberately *not* a fresh clone. A patch's line numbers were computed
+    against the exact tree this run analyzed, which is still sitting in that
+    run's workspace; re-cloning would fetch whatever has been pushed since
+    and apply line-addressed edits to code they were never derived from.
+
+    Raising rather than silently re-cloning is the point: if the workspace
+    is gone, the honest answer is "re-run the analysis", not "apply this to
+    something that looks similar".
+    """
+    if project.github_repo_full_name:
+        checkout = workspace_for(project.id, analysis.id)
+        if not checkout.is_dir():
+            raise FixApplicationError(
+                "the checkout this run analyzed is no longer available, so these patches "
+                "can't be applied to the code they were written against. Re-run the "
+                "analysis to get fresh patches."
+            )
+        return checkout
+    if project.source_path:
+        return resolve_source_root(project.source_path)
+    return None
 
 
 async def list_design_analyses(db: AsyncSession, project_id: UUID) -> list[DesignAnalysis]:

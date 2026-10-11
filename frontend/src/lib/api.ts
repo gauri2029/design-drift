@@ -48,6 +48,8 @@ export interface Project {
   target_url: string
   target_selector: string | null
   source_path: string | null
+  github_repo_full_name: string | null
+  github_branch: string | null
   figma_data: FigmaNode | null
   figma_screenshot_key: string | null
   figma_fetched_at: string | null
@@ -60,6 +62,8 @@ export interface ProjectCreateInput {
   figma_file_key: string
   figma_node_id: string
   target_url: string
+  github_repo_full_name?: string
+  github_branch?: string
   target_selector?: string
   source_path?: string
 }
@@ -637,4 +641,34 @@ function parseFrame(frame: string): { name: string; data: string } | null {
     else if (line.startsWith('data: ')) data = line.slice(6)
   }
   return name && data ? { name, data } : null
+}
+
+
+/** Download this run's applied changes as a `git apply`-able patch.
+ *
+ * The only way an approved change reaches a repository: Design Drift never
+ * pushes, commits or opens a pull request, so the user applies it
+ * themselves.
+ */
+export async function downloadAnalysisPatch(
+  projectId: string,
+  analysisId: string,
+): Promise<void> {
+  const response = await fetch(
+    `${API_BASE_URL}/api/v1/projects/${projectId}/design-analysis/${analysisId}/patch`,
+    { headers: authHeader() },
+  )
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { detail?: string } | null
+    throw new Error(body?.detail ?? `Could not build a patch (${response.status})`)
+  }
+
+  // A blob URL rather than pointing a link at the endpoint, because the
+  // request needs an Authorization header.
+  const url = URL.createObjectURL(await response.blob())
+  const link = document.createElement('a')
+  link.href = url
+  link.download = `design-drift-${analysisId}.patch`
+  link.click()
+  URL.revokeObjectURL(url)
 }
