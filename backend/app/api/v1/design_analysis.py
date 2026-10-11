@@ -26,6 +26,7 @@ from app.services.design_analysis import (
     FixReviewError,
     ProjectNotAnalyzableError,
 )
+from app.services.patch_export import NothingToExportError, build_patch
 from app.services.verification import NotVerifiableError
 from app.tools.repo_search import SourceNotAccessibleError
 
@@ -174,6 +175,49 @@ async def apply_design_analysis_fixes(
     except SourceNotAccessibleError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     return DesignAnalysisRead.model_validate(analysis)
+
+
+@router.get("/{design_analysis_id}/patch")
+async def download_design_analysis_patch(
+    project_id: UUID,
+    design_analysis_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_current_user),
+) -> Response:
+    """The applied changes as a unified diff, for the user to take anywhere.
+
+    Design Drift never pushes, commits, or opens a pull request. This is how
+    an approved change reaches a repository: the user downloads it and runs
+    `git apply` themselves, so the write stays on their side
+    (docs/principles.md #5).
+    """
+    project = await _get_project_or_404(project_id, db, user.id)
+    analysis = await design_analysis_service.get_design_analysis(db, project_id, design_analysis_id)
+    if analysis is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="design analysis not found"
+        )
+
+    try:
+        source_root = design_analysis_service.applied_source_root(project, analysis)
+        if source_root is None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="this project has no source checkout, so there is nothing to export",
+            )
+        diff = build_patch(analysis, source_root)
+    except (NothingToExportError, FixApplicationError, SourceNotAccessibleError) as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+    return Response(
+        content=diff,
+        media_type="text/x-patch",
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="design-drift-{design_analysis_id}.patch"'
+            )
+        },
+    )
 
 
 @router.post("/{design_analysis_id}/verify", response_model=DesignAnalysisRead)

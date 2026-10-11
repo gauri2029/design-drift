@@ -50,6 +50,12 @@ class DesignAnalysis(Base):
     # different URLs measures the difference between two sites, not the
     # effect of a patch.
     target_url: Mapped[str | None] = mapped_column(nullable=True)
+
+    # The exact commit this run analyzed, when the source came from GitHub.
+    # Recorded per run rather than on the project because it changes with
+    # every push: without it, a months-old finding points at line numbers in
+    # a file that has since moved, and nothing says so.
+    source_commit_sha: Mapped[str | None] = mapped_column(nullable=True)
     # Visual Comparison Agent's deterministic pixel-diff result/image and
     # LLM judgment — same shapes as Scan.comparison_result/diff_image_key
     # and Review.result respectively.

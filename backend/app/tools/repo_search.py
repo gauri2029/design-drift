@@ -165,14 +165,27 @@ def list_source_files(root: Path) -> tuple[list[str], bool]:
     listing short so the caller can tell the model its view is partial.
     """
     paths: list[str] = []
+    resolved_root = root.resolve()
 
     for path in sorted(root.rglob("*")):
+        # Symlinks are skipped outright rather than resolved and re-checked.
+        # rglob() follows them, so a checkout containing `styles.css ->
+        # /etc/passwd` (or -> ~/.ssh/id_rsa.css) would otherwise be read and
+        # sent to an LLM. That was only theoretical while checkouts were
+        # placed by hand in sources/; cloning arbitrary repositories makes
+        # the link's target an attacker's choice.
+        if path.is_symlink():
+            continue
         if not path.is_file():
             continue
         if path.suffix.lower() not in SOURCE_EXTENSIONS:
             continue
         relative = path.relative_to(root)
         if any(part in IGNORED_DIRECTORIES for part in relative.parts):
+            continue
+        # Belt and braces: a parent directory could itself be a link that
+        # rglob descended through before reaching a non-link file.
+        if resolved_root not in path.resolve().parents:
             continue
         paths.append(relative.as_posix())
 
