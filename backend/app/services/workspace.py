@@ -42,6 +42,21 @@ def workspace_for(project_id: UUID, analysis_id: UUID) -> Path:
     return candidate
 
 
+def remove_project_workspaces(project_id: UUID) -> None:
+    """Delete every checkout this project ever cloned.
+
+    One directory per run means a deleted project can otherwise leave a
+    pile of third-party source on disk that nothing references any more —
+    the row that named it is gone, so it would never be cleaned up.
+    """
+    root = workspace_root()
+    project_dir = (root / str(project_id)).resolve()
+    if root not in project_dir.parents:
+        raise SourceNotAccessibleError("workspace path resolves outside the workspace root")
+    if project_dir.is_dir():
+        shutil.rmtree(project_dir)
+
+
 def reset(path: Path) -> None:
     """Clear a workspace directory so a clone can write into it.
 

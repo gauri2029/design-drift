@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { useProjects } from '../hooks/useProjects'
+import type { Project } from '../lib/api'
 import { NewProjectDialog } from './NewProjectDialog'
+import { DeleteProjectDialog } from './DeleteProjectDialog'
 import { ProjectList } from './ProjectList'
 import { Workspace } from './Workspace'
 import { Button, EmptyState, Label } from './ui'
@@ -12,8 +14,17 @@ import { Button, EmptyState, Label } from './ui'
  * other. Here choosing a project is navigation; everything else is the work.
  */
 export function ProjectsPanel() {
-  const { projects, status, error, selectedProject, selectProject, submitting, createProject } =
-    useProjects()
+  const {
+    projects,
+    status,
+    error,
+    selectedProject,
+    selectProject,
+    submitting,
+    createProject,
+    deleteProject,
+  } = useProjects()
+  const [pendingDelete, setPendingDelete] = useState<Project | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
 
   return (
@@ -37,6 +48,7 @@ export function ProjectsPanel() {
             projects={projects}
             selectedId={selectedProject?.id ?? null}
             onSelect={selectProject}
+            onDelete={setPendingDelete}
           />
         )}
       </aside>
@@ -64,6 +76,15 @@ export function ProjectsPanel() {
         onClose={() => setDialogOpen(false)}
         onCreate={createProject}
         submitting={submitting}
+      />
+
+      <DeleteProjectDialog
+        project={pendingDelete}
+        onCancel={() => setPendingDelete(null)}
+        onConfirm={async (project) => {
+          await deleteProject(project.id)
+          setPendingDelete(null)
+        }}
       />
     </div>
   )

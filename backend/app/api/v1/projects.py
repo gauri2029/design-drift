@@ -50,6 +50,27 @@ async def get_project(
     return ProjectRead.model_validate(project)
 
 
+@router.delete("/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_project(
+    project_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    storage: StorageBackend = Depends(get_storage_backend),
+    user: User = Depends(require_current_user),
+) -> Response:
+    """Delete a project, its runs, and everything they wrote to disk.
+
+    Owner-gated like every other project route: someone else's project is a
+    404, so this can't be used to delete — or to probe for — a project that
+    isn't yours.
+    """
+    project = await projects_service.get_project(db, project_id, owner_id=user.id)
+    if project is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="project not found")
+
+    await projects_service.delete_project(db, project, storage)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @router.get("/{project_id}/figma/screenshot")
 async def get_project_figma_screenshot(
     project_id: UUID,

@@ -25,6 +25,11 @@ class LocalStorageBackend:
     def read(self, key: str) -> bytes:
         return self._resolve(key).read_bytes()
 
+    def delete(self, key: str) -> None:
+        # _resolve keeps a crafted key from reaching outside the root, so a
+        # bad key raises rather than deleting something elsewhere on disk.
+        self._resolve(key).unlink(missing_ok=True)
+
 
 @lru_cache
 def get_storage_backend() -> LocalStorageBackend:
