@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
   createProject as createProjectRequest,
+  deleteProject as deleteProjectRequest,
   fetchProjects,
   type Project,
   type ProjectCreateInput,
@@ -16,6 +17,7 @@ interface UseProjectsResult {
   selectProject: (id: string) => void
   submitting: boolean
   createProject: (input: ProjectCreateInput) => Promise<void>
+  deleteProject: (id: string) => Promise<void>
 }
 
 export function useProjects(): UseProjectsResult {
@@ -58,6 +60,14 @@ export function useProjects(): UseProjectsResult {
     }
   }, [])
 
+  const deleteProject = useCallback(async (id: string) => {
+    await deleteProjectRequest(id)
+    setProjects((current) => current.filter((project) => project.id !== id))
+    // Selecting the first remaining project rather than nothing: an empty
+    // workspace after a delete reads as though something broke.
+    setSelectedId((current) => (current === id ? null : current))
+  }, [])
+
   return {
     projects,
     status,
@@ -66,5 +76,6 @@ export function useProjects(): UseProjectsResult {
     selectProject: setSelectedId,
     submitting,
     createProject,
+    deleteProject,
   }
 }

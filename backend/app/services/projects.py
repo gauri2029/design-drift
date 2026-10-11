@@ -7,6 +7,7 @@ docs/principles.md #6); until then this is a deterministic fetch-and-persist
 flow, which is all "register a project" requires.
 """
 
+import logging
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -17,8 +18,14 @@ from app.core.config import get_settings
 from app.integrations.figma.client import FigmaClient
 from app.integrations.figma.exceptions import FigmaAPIError
 from app.integrations.storage.base import StorageBackend
+from app.models.design_analysis import DesignAnalysis
 from app.models.project import Project
+from app.models.scan import Scan
 from app.schemas.project import ProjectCreate
+from app.services.workspace import remove_project_workspaces
+from app.tools.repo_search import SourceNotAccessibleError
+
+logger = logging.getLogger(__name__)
 
 
 async def create_project(
@@ -104,3 +111,63 @@ async def _fetch_and_store_figma_data(project: Project, storage: StorageBackend)
     project.figma_data = node.model_dump(mode="json")
     project.figma_screenshot_key = screenshot_key
     project.figma_fetched_at = datetime.now(UTC)
+
+
+async def delete_project(db: AsyncSession, project: Project, storage: StorageBackend) -> None:
+    """Remove a project and everything it produced.
+
+    Rows cascade (scans -> reviews, and design analyses), but the files do
+    not: storage artifacts and cloned workspaces are referenced by keys on
+    those rows, so they have to be collected *before* the delete or they
+    become unreachable litter — a deleted project would silently keep its
+    screenshots and a full third-party checkout on disk.
+
+    Files are removed before the commit, but a failure to unlink one does
+    not abort the delete: the user asked for the project to go, and leaving
+    the row behind because a screenshot was already missing would be the
+    worse outcome. Storage.delete is a no-op on an absent key for the same
+    reason.
+    """
+    keys = await _artifact_keys(db, project)
+
+    for key in keys:
+        try:
+            storage.delete(key)
+        except (OSError, ValueError) as exc:
+            # ValueError: a key that escapes the storage root, which should
+            # be impossible for keys we wrote — logged, not raised.
+            logger.warning("could not delete artifact %s: %s", key, exc)
+
+    try:
+        remove_project_workspaces(project.id)
+    except (OSError, SourceNotAccessibleError) as exc:
+        logger.warning("could not remove workspaces for project %s: %s", project.id, exc)
+
+    await db.delete(project)
+    await db.commit()
+
+
+async def _artifact_keys(db: AsyncSession, project: Project) -> list[str]:
+    """Every storage key this project owns, across its rows."""
+    keys: list[str | None] = [project.figma_screenshot_key]
+
+    scans = (await db.execute(select(Scan).where(Scan.project_id == project.id))).scalars().all()
+    for scan in scans:
+        keys += [scan.production_screenshot_key, scan.diff_image_key]
+
+    analyses = (
+        (await db.execute(select(DesignAnalysis).where(DesignAnalysis.project_id == project.id)))
+        .scalars()
+        .all()
+    )
+    for analysis in analyses:
+        keys += [
+            analysis.production_screenshot_key,
+            analysis.diff_image_key,
+            analysis.verification_screenshot_key,
+            analysis.verification_diff_image_key,
+        ]
+
+    # Deduplicated: a re-run can record the same key twice, and deleting it
+    # twice is harmless but noisy in the logs.
+    return list(dict.fromkeys(key for key in keys if key))

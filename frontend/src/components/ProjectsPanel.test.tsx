@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Project } from '../lib/api'
 import { ProjectsPanel } from './ProjectsPanel'
@@ -85,5 +85,43 @@ describe('ProjectsPanel', () => {
     render(<ProjectsPanel />)
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/failed to list projects/i)
+  })
+
+  it('deletes a project only after its name is typed', async () => {
+    const calls: string[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = typeof input === 'string' ? input : input.toString()
+        const method = init?.method ?? 'GET'
+        calls.push(`${method} ${url}`)
+        if (url.endsWith('/api/v1/projects') && method === 'GET') {
+          return { ok: true, json: async () => [CREATED_PROJECT] }
+        }
+        if (method === 'DELETE') return { ok: true, status: 204, json: async () => ({}) }
+        return { ok: true, json: async () => [] }
+      }),
+    )
+
+    render(<ProjectsPanel />)
+    fireEvent.click(await screen.findByRole('button', { name: /delete this project/i }))
+
+    const confirm = await screen.findByRole('button', { name: /delete project/i })
+    // Guarded until the name matches: this removes every run and file the
+    // project produced, and the trash icon sits one hover away from the row.
+    expect(confirm).toBeDisabled()
+    expect(calls.some((c) => c.startsWith('DELETE'))).toBe(false)
+
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Marketing homepage' } })
+    expect(confirm).not.toBeDisabled()
+    fireEvent.click(confirm)
+
+    await waitFor(() =>
+      expect(calls.some((c) => c === `DELETE http://localhost:8000/api/v1/projects/proj-1`)).toBe(
+        true,
+      ),
+    )
+    // Gone from the rail, without a reload.
+    expect(await screen.findByText(/no projects yet/i)).toBeInTheDocument()
   })
 })

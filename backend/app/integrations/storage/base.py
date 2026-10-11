@@ -16,3 +16,13 @@ class StorageBackend(Protocol):
     def read(self, key: str) -> bytes:
         """Return the bytes previously saved under `key`."""
         ...
+
+    def delete(self, key: str) -> None:
+        """Remove `key` if it exists.
+
+        Deliberately not an error when the key is absent: callers delete a
+        project's artifacts from the keys recorded on its rows, and a run
+        that failed midway can leave a key recorded whose file was never
+        written. Deleting the rest matters more than reporting that one.
+        """
+        ...

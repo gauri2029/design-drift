@@ -672,3 +672,16 @@ export async function downloadAnalysisPatch(
   link.click()
   URL.revokeObjectURL(url)
 }
+
+
+/** Delete a project and everything it produced. Irreversible. */
+export async function deleteProject(projectId: string): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/projects/${projectId}`, {
+    method: 'DELETE',
+    headers: authHeader(),
+  })
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { detail?: string } | null
+    throw new Error(body?.detail ?? `Could not delete that project (${response.status})`)
+  }
+}
