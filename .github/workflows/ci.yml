@@ -82,7 +82,7 @@ jobs:
       # command always exits 0 and the step could never fail.
       - name: Retrieval evals
         working-directory: backend
-        run: uv run python -m app.evals.retrieval --search-only --min-accuracy 0.9
+        run: uv run python -m app.evals.retrieval --search-only --min-accuracy 0.91
 
   frontend:
     runs-on: ubuntu-latest

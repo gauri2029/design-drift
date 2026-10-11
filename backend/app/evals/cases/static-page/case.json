@@ -144,6 +144,31 @@
         "file_path": null,
         "rationale": "Deliberately unanswerable: this page has no social icons anywhere, in markup or comments. no_match is correct and a location here is a false positive. Without a case like this, a system that always guesses scores as well as one that knows when to stop."
       }
+    },
+    {
+      "_comment": "The pair below is the real failure from a GitHub-backed run: a visual finding about the hero subtitle came back no_match, and the same drift phrased with the production text located it immediately. They exist together because the contrast is the measurement - one alone would just look like a pass or a bug.",
+      "finding": {
+        "title": "Incorrect subtitle text content",
+        "detail": "The subtitle text below the main page heading differs between the design and production.",
+        "source": "visual_comparison"
+      },
+      "expected": {
+        "file_path": null,
+        "rationale": "Correct to decline. Nothing in this title or detail appears in the source: no quoted copy, no class, no id. 'subtitle' and 'heading' are English, not markup, and the element is class='hero-sub'. With no anchor there is no evidence, and guessing a file would be worse than saying so (docs/principles.md #2). Note likely_area ('hero section subtitle') would not help either - it is prose, and extract_anchors is not given it."
+      }
+    },
+    {
+      "finding": {
+        "title": "Hero subtitle reads 'Riverside Pottery Studio' instead of the studio tagline",
+        "detail": "The subtitle below the main heading shows the studio name where the design shows a descriptive tagline.",
+        "source": "visual_comparison"
+      },
+      "expected": {
+        "file_path": "index.html",
+        "line_start": 13,
+        "line_end": 13,
+        "rationale": "The same drift as the finding above, quoting the text that is actually on the page. One quoted string is the difference between locatable and not - which is what the pair is here to keep measurable."
+      }
     }
   ]
 }
