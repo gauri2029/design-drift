@@ -11,6 +11,8 @@ const CREATED_PROJECT: Project = {
   target_url: 'https://example.com',
   target_selector: null,
   source_path: null,
+  github_repo_full_name: null,
+  github_branch: null,
   figma_data: null,
   figma_screenshot_key: 'figma/proj-1/preview.png',
   figma_fetched_at: '2026-01-01T00:00:00Z',
