@@ -124,6 +124,34 @@ async def get_installation(installation_id: int) -> dict[str, Any]:
     return data
 
 
+async def find_installation_by_account(account_login: str) -> dict[str, Any] | None:
+    """The App's installation on a named GitHub account, if there is one.
+
+    Exists for the case GitHub leaves no other route to: its "Configure"
+    flow returns the user to the app *without* an installation_id, so
+    someone who installed the App before signing in — or who reconfigured
+    an existing installation — has no id to hand over.
+
+    Takes a login rather than returning the whole list because the App's
+    JWT can see every installation of this App, including other people's.
+    Matching one the caller already named discloses nothing they did not
+    already know; returning the list would be an enumeration of this App's
+    users.
+    """
+    installations = await _request(f"{API_BASE}/app/installations?per_page=100", _app_jwt())
+    if not isinstance(installations, list):
+        raise GitHubAPIError("unexpected installations payload")
+    wanted = account_login.strip().lstrip("@").lower()
+    for installation in installations:
+        if not isinstance(installation, dict):
+            continue
+        account = installation.get("account") or {}
+        if str(account.get("login", "")).lower() == wanted:
+            result: dict[str, Any] = installation
+            return result
+    return None
+
+
 async def list_repositories(installation_id: int) -> list[dict[str, Any]]:
     """Exactly the repositories this installation was granted.
 

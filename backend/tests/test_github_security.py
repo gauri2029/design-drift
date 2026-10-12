@@ -181,6 +181,90 @@ class TestInstallationAuthorization:
         assert count == 0
 
 
+class TestLinkingByAccountName:
+    """The recovery path for GitHub's Configure flow, which returns the
+    user with no installation_id."""
+
+    @respx.mock
+    async def test_naming_your_account_links_its_installation(self, configured_app):
+        respx.get("https://api.github.com/app/installations").mock(
+            return_value=Response(
+                200,
+                json=[
+                    {"id": BOB_INSTALLATION, "account": {"login": "bob"}},
+                    {"id": ALICE_INSTALLATION, "account": {"login": "alice"}},
+                ],
+            )
+        )
+        respx.get(f"https://api.github.com/app/installations/{ALICE_INSTALLATION}").mock(
+            return_value=Response(200, json={"account": {"login": "alice"}})
+        )
+
+        async with _client() as http:
+            alice = await _signup(http, "alice@example.com")
+            response = await http.post(
+                "/api/v1/github/installations/by-account",
+                json={"account_login": "Alice"},  # case shouldn't matter
+                headers=alice,
+            )
+
+        assert response.status_code == 201
+        assert response.json()["installation_id"] == ALICE_INSTALLATION
+
+    @respx.mock
+    async def test_it_never_returns_the_list_of_other_installations(self, configured_app):
+        """The App's JWT can see every installation of this App. Naming one
+        you already know discloses nothing; enumerating them would."""
+        respx.get("https://api.github.com/app/installations").mock(
+            return_value=Response(200, json=[{"id": BOB_INSTALLATION, "account": {"login": "bob"}}])
+        )
+
+        async with _client() as http:
+            alice = await _signup(http, "alice@example.com")
+            response = await http.post(
+                "/api/v1/github/installations/by-account",
+                json={"account_login": "alice"},
+                headers=alice,
+            )
+
+        assert response.status_code == 404
+        # Not even the fact that an installation named "bob" exists.
+        assert "bob" not in response.text
+        assert str(BOB_INSTALLATION) not in response.text
+
+    @respx.mock
+    async def test_you_cannot_claim_an_account_someone_else_linked(self, configured_app):
+        respx.get("https://api.github.com/app/installations").mock(
+            return_value=Response(
+                200, json=[{"id": ALICE_INSTALLATION, "account": {"login": "alice"}}]
+            )
+        )
+        respx.get(f"https://api.github.com/app/installations/{ALICE_INSTALLATION}").mock(
+            return_value=Response(200, json={"account": {"login": "alice"}})
+        )
+
+        async with _client() as http:
+            await _signup(http, "alice@example.com")
+            bob = await _signup(http, "bob@example.com")
+            await _link("alice@example.com", ALICE_INSTALLATION)
+
+            # Bob names Alice's account, which he can simply read off GitHub.
+            response = await http.post(
+                "/api/v1/github/installations/by-account",
+                json={"account_login": "alice"},
+                headers=bob,
+            )
+
+        assert response.status_code == 409
+
+    async def test_it_requires_a_token(self):
+        async with _client() as http:
+            response = await http.post(
+                "/api/v1/github/installations/by-account", json={"account_login": "alice"}
+            )
+        assert response.status_code == 401
+
+
 class TestPrivateRepositoriesAreDeferred:
     def test_a_private_repository_is_refused_with_a_reason(self):
         with pytest.raises(RepositoryNotPermittedError) as excinfo:

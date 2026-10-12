@@ -54,6 +54,25 @@ export function fetchBranches(installationId: number, fullName: string): Promise
   return get<string[]>(`/installations/${installationId}/repositories/${fullName}/branches`)
 }
 
+/** Link an installation by naming the account it's installed on.
+ *
+ * GitHub's "Configure" flow returns the user with no `installation_id`, so
+ * the redirect below can't fire and the App looks unconnected even though
+ * it is installed. Naming the account recovers it.
+ */
+export async function linkInstallationByAccount(accountLogin: string): Promise<Installation> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/github/installations/by-account`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeader() },
+    body: JSON.stringify({ account_login: accountLogin }),
+  })
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { detail?: string } | null
+    throw new Error(body?.detail ?? `Could not find that installation (${response.status})`)
+  }
+  return (await response.json()) as Installation
+}
+
 /** Record an installation after GitHub redirects back.
  *
  * The id comes from the callback's query string; the backend verifies it

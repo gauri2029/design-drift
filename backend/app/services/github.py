@@ -88,6 +88,26 @@ async def link_installation(
     return record
 
 
+async def link_installation_by_account(
+    db: AsyncSession, user_id: UUID, account_login: str
+) -> GitHubInstallation:
+    """Link the App's installation on a named account.
+
+    The path for someone GitHub sent back without an installation_id — its
+    "Configure" flow omits it, so the normal callback can't fire. Naming
+    the account is the proof: the lookup only matches an installation the
+    caller already identified, and link_installation still refuses one
+    another user has claimed.
+    """
+    installation = await client.find_installation_by_account(account_login)
+    if installation is None:
+        raise InstallationNotLinkedError(
+            f"Design Drift is not installed on {account_login!r}. Install it there first, "
+            "then try again."
+        )
+    return await link_installation(db, user_id, int(installation["id"]))
+
+
 async def require_installation(
     db: AsyncSession, user_id: UUID, installation_id: int
 ) -> GitHubInstallation:

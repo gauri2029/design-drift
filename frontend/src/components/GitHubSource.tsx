@@ -5,6 +5,7 @@ import {
   fetchInstallations,
   fetchRepositories,
   linkInstallation,
+  linkInstallationByAccount,
   type Installation,
   type Repository,
 } from '../lib/github'
@@ -35,6 +36,8 @@ export function GitHubSource({
   const [repositories, setRepositories] = useState<Repository[]>([])
   const [branches, setBranches] = useState<string[]>([])
   const [error, setError] = useState<string | null>(null)
+  const [account, setAccount] = useState('')
+  const [linking, setLinking] = useState(false)
 
   // GitHub redirects back with ?installation_id=... after an install.
   useEffect(() => {
@@ -106,6 +109,46 @@ export function GitHubSource({
               Connect GitHub
             </a>
           )}
+
+          {/* GitHub's "Configure" flow returns here without an
+              installation_id, so someone who already installed the App
+              lands back on this screen with no way forward. Naming the
+              account they installed it on recovers it. */}
+          <details className="text-[13px] text-ink-faint">
+            <summary className="cursor-pointer transition-colors duration-200 hover:text-ink-dim">
+              Already installed it?
+            </summary>
+            <div className="mt-2.5 flex gap-2">
+              <input
+                value={account}
+                onChange={(event) => setAccount(event.target.value)}
+                placeholder="your-github-username"
+                aria-label="GitHub account you installed it on"
+                className="min-w-0 flex-1 rounded-xl border border-edge-hi bg-tint px-3 py-2 text-[13px] text-ink placeholder:text-ink-faint/60 focus:border-accent focus:outline-none"
+              />
+              <button
+                type="button"
+                disabled={!account.trim() || linking}
+                onClick={() => {
+                  setLinking(true)
+                  setError(null)
+                  void linkInstallationByAccount(account.trim())
+                    .then((record) => {
+                      setInstallations((current) => [record, ...current])
+                      setInstallationId(record.installation_id)
+                      setAccount('')
+                    })
+                    .catch((err: unknown) =>
+                      setError(err instanceof Error ? err.message : 'Could not link that'),
+                    )
+                    .finally(() => setLinking(false))
+                }}
+                className="shrink-0 rounded-xl border border-edge-hi bg-tint px-3 py-2 text-[13px] text-ink transition-colors duration-200 hover:bg-raised disabled:opacity-40"
+              >
+                {linking ? 'Linking…' : 'Link'}
+              </button>
+            </div>
+          </details>
         </div>
       ) : (
         <>
