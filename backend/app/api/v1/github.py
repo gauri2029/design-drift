@@ -20,6 +20,7 @@ from app.models.user import User
 from app.schemas.github import (
     GitHubStatus,
     InstallationLink,
+    InstallationLinkByAccount,
     InstallationRead,
     RepositoryRead,
 )
@@ -80,6 +81,31 @@ async def link_installation(
     """
     try:
         record = await github_service.link_installation(db, user.id, payload.installation_id)
+    except Exception as exc:
+        raise _handle(exc) from exc
+    return InstallationRead.model_validate(record, from_attributes=True)
+
+
+@router.post(
+    "/installations/by-account",
+    response_model=InstallationRead,
+    status_code=status.HTTP_201_CREATED,
+)
+async def link_installation_by_account(
+    payload: InstallationLinkByAccount,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_current_user),
+) -> InstallationRead:
+    """Link an installation GitHub didn't hand us an id for.
+
+    GitHub's "Configure" flow returns the user without an installation_id,
+    so the normal callback can't fire and the App looks unconnected even
+    though it is installed. Naming the account recovers it.
+    """
+    try:
+        record = await github_service.link_installation_by_account(
+            db, user.id, payload.account_login
+        )
     except Exception as exc:
         raise _handle(exc) from exc
     return InstallationRead.model_validate(record, from_attributes=True)

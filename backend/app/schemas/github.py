@@ -5,6 +5,11 @@ class InstallationLink(BaseModel):
     installation_id: int = Field(gt=0)
 
 
+class InstallationLinkByAccount(BaseModel):
+    # The GitHub user or org the App was installed on.
+    account_login: str = Field(min_length=1, max_length=120)
+
+
 class InstallationRead(BaseModel):
     installation_id: int
     account_login: str
