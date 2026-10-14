@@ -183,13 +183,19 @@ export function useTheme(): [Theme, () => void] {
  * crossfade, which is what every browser did before the API existed. */
 export function withViewTransition(update: () => void) {
   const doc = document as Document & {
-    startViewTransition?: (callback: () => void) => unknown
+    startViewTransition?: (callback: () => void) => { finished?: Promise<void> }
   }
   if (typeof doc.startViewTransition !== 'function' || reducedMotion()) {
     update()
     return
   }
-  doc.startViewTransition(update)
+  // `finished` rejects when the browser abandons a transition, which it
+  // does on any viewport change mid-animation. Resizing the window during
+  // a view switch is ordinary, and the state update has already happened
+  // either way, so the rejection is noise rather than a failure. Left
+  // uncaught it surfaces as "Uncaught (in promise) InvalidStateError".
+  const transition = doc.startViewTransition(update)
+  void transition?.finished?.catch(() => {})
 }
 
 

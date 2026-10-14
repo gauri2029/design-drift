@@ -14,7 +14,7 @@ import { buildIssues, issueHeadline, summarise, verdict, type Issue } from '../l
 import { useCursorLight, withViewTransition } from '../lib/motion'
 import { DriftCanvas, type CanvasMode } from './DriftCanvas'
 import { IssueDock } from './IssueDock'
-import { Button, CountUp, EmptyState, Label, Status, Tabs } from './ui'
+import { Button, CountUp, EmptyState, Label, Status, Tabs, Thumb } from './ui'
 
 type View = 'drift' | 'fix' | 'runs'
 
@@ -632,10 +632,14 @@ function Fix({
                       </Status>
                     )}
                     {analysis.verification_screenshot_key && (
-                      <img
+                      /* Thumb, not a bare <img>: this endpoint is
+                         owner-gated, so pointing a tag straight at it
+                         401s. It was missed when the other captures moved
+                         to authenticated fetches. */
+                      <Thumb
                         src={verificationProductionUrl(project.id, analysis.id)}
                         alt="The page after the fixes were applied"
-                        className="mt-2 max-h-48 w-full rounded-xl border border-edge object-cover object-top"
+                        className="mt-2 max-h-48 w-full rounded-xl border border-edge"
                       />
                     )}
                   </div>

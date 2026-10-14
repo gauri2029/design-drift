@@ -43,8 +43,11 @@ export function DriftCanvas({
   // handed to <img> as blob URLs. Resolved once here rather than per tag:
   // the same three sources are rendered by four different <img>s below,
   // and fetching each one per tag would download them twice.
-  const designSrc = useAuthedImage(designUrl) ?? ''
-  const productionSrc = useAuthedImage(productionUrl) ?? ''
+  // Null until the authed fetch resolves. Rendering <img src=""> in the
+  // meantime makes the browser re-request the current page as the image,
+  // which it warns about in the console and which costs a real request.
+  const designSrc = useAuthedImage(designUrl)
+  const productionSrc = useAuthedImage(productionUrl)
   const diffSrc = useAuthedImage(diffUrl) ?? undefined
   const [zoom, setZoom] = useState(1)
   const [reveal, setReveal] = useState(50)
@@ -186,16 +189,15 @@ export function DriftCanvas({
               className={`relative select-none ${dragging ? 'cursor-ew-resize' : ''}`}
               style={{ width: `${zoom * 100}%` }}
             >
-              <img src={designSrc} alt="The design" className="block w-full" draggable={false} />
+              <Capture src={designSrc} alt="The design" className="block w-full" />
               <div
                 className="absolute inset-0 overflow-hidden"
                 style={{ clipPath: `inset(0 0 0 ${reveal}%)` }}
               >
-                <img
+                <Capture
                   src={productionSrc}
                   alt="The live page, revealed to the right of the divider"
                   className="block w-full"
-                  draggable={false}
                 />
               </div>
               <Divider reveal={reveal} onGrab={() => setDragging(true)} dragging={dragging} />
@@ -233,7 +235,7 @@ export function DriftCanvas({
             className="relative max-h-[58vh] overflow-auto"
           >
             <SideLabel className="left-4">Differences</SideLabel>
-            <img
+            <Capture
               src={diffSrc}
               alt="Every pixel that differs between the design and the live page"
               className="block"
@@ -320,7 +322,7 @@ function Pane({
 }: {
   paneRef: React.RefObject<HTMLDivElement | null>
   label: string
-  src: string
+  src: string | null
   zoom: number
   onScroll: () => void
   onWheel: (event: WheelEvent) => void
@@ -339,7 +341,7 @@ function Pane({
         aria-label={`${label}. Scroll to pan - both panes move together.`}
         className="max-h-[58vh] overflow-auto"
       >
-        <img src={src} alt={label} className="block" style={{ width: `${zoom * 100}%` }} />
+        <Capture src={src} alt={label} className="block" style={{ width: `${zoom * 100}%` }} />
       </div>
     </div>
   )
@@ -347,4 +349,29 @@ function Pane({
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value))
+}
+
+
+/** A capture that renders nothing until its bytes have arrived.
+ *
+ * The screenshots are owner-gated, so they are fetched with a token and
+ * handed over as blob URLs, which means there is a moment with no src.
+ * An `<img src="">` in that moment makes the browser re-request the
+ * current page as the image: a wasted round trip, and a console warning
+ * on every render. Holding the element back is both quieter and cheaper,
+ * and the surrounding layout already sizes itself from the container.
+ */
+function Capture({
+  src,
+  alt,
+  className,
+  style,
+}: {
+  src: string | null
+  alt: string
+  className?: string
+  style?: React.CSSProperties
+}) {
+  if (!src) return null
+  return <img src={src} alt={alt} className={className} style={style} draggable={false} />
 }
