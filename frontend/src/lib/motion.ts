@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
  *
  * Three rules hold throughout:
  *   1. No pointer handler sets React state. Every per-frame effect writes a
- *      CSS custom property on a DOM node, which the compositor reads — a
+ *      CSS custom property on a DOM node, which the compositor reads - a
  *      render on pointermove would be a dropped frame per move.
  *   2. Only `transform` and `opacity` animate, never geometry.
  *   3. Work is coalesced into one requestAnimationFrame, so a pointer
@@ -54,8 +54,7 @@ export function useCursorLight<T extends HTMLElement>() {
 /** A control that leans toward the cursor.
  *
  * Writes `--pull-x`/`--pull-y` rather than `transform`, so the lean composes
- * with the `.tilt` hover and press transforms instead of overwriting them —
- * setting `transform` here is what made the button jump in an earlier pass.
+ * with the `.tilt` hover and press transforms instead of overwriting them - * setting `transform` here is what made the button jump in an earlier pass.
  */
 export function useMagnetic<T extends HTMLElement>(max = 3) {
   const frame = useRef(0)
@@ -136,7 +135,7 @@ export type Theme = 'dark' | 'light'
  *
  * Reads what index.html already applied before first paint, so this never
  * causes the flash it exists to prevent. When nothing was stored it resolves
- * the OS preference and writes it to the element — leaving `data-theme`
+ * the OS preference and writes it to the element - leaving `data-theme`
  * unset would let the label and the painted theme disagree, and the first
  * click would then appear to do nothing. */
 export function useTheme(): [Theme, () => void] {
@@ -144,8 +143,7 @@ export function useTheme(): [Theme, () => void] {
     if (typeof document === 'undefined') return 'dark'
     const set = document.documentElement.dataset.theme
     if (set === 'light' || set === 'dark') return set
-    // A theme chosen on a previous visit outranks the OS preference —
-    // `toggle` persists one, so not reading it back here meant the choice
+    // A theme chosen on a previous visit outranks the OS preference - // `toggle` persists one, so not reading it back here meant the choice
     // was forgotten on every reload.
     try {
       const saved = localStorage.getItem('drift-theme')
@@ -181,15 +179,74 @@ export function useTheme(): [Theme, () => void] {
 
 /** Run a state change inside a View Transition where the browser has one.
  *
- * Everything still works without it — the update simply happens without a
+ * Everything still works without it - the update simply happens without a
  * crossfade, which is what every browser did before the API existed. */
 export function withViewTransition(update: () => void) {
   const doc = document as Document & {
-    startViewTransition?: (callback: () => void) => unknown
+    startViewTransition?: (callback: () => void) => { finished?: Promise<void> }
   }
   if (typeof doc.startViewTransition !== 'function' || reducedMotion()) {
     update()
     return
   }
-  doc.startViewTransition(update)
+  // `finished` rejects when the browser abandons a transition, which it
+  // does on any viewport change mid-animation. Resizing the window during
+  // a view switch is ordinary, and the state update has already happened
+  // either way, so the rejection is noise rather than a failure. Left
+  // uncaught it surfaces as "Uncaught (in promise) InvalidStateError".
+  const transition = doc.startViewTransition(update)
+  void transition?.finished?.catch(() => {})
+}
+
+
+/** Reveals an element the first time it scrolls into view.
+ *
+ * An IntersectionObserver rather than a scroll listener: the browser does
+ * the work off the main thread and calls back only on a crossing, so a
+ * long page costs nothing per frame. The observer disconnects after the
+ * first reveal, because a card that re-animates every time it passes the
+ * fold is a distraction rather than a flourish.
+ *
+ * Returns a ref to spread onto the element. The element starts hidden via
+ * `.reveal` in index.css and gets `.is-visible` added; doing it with a
+ * class rather than React state keeps the whole thing off the render path.
+ */
+export function useReveal<T extends HTMLElement>(delayMs = 0) {
+  const ref = useRef<T>(null)
+
+  useEffect(() => {
+    const node = ref.current
+    if (!node) return
+
+    // Opt the document in only now that an observer is about to run. The
+    // hidden state lives behind this class, so content is visible by
+    // default and can never be stranded at opacity 0.
+    document.documentElement.classList.add('js-reveal')
+
+    // Reduced motion, or a browser without the observer: show it outright
+    // rather than leaving it permanently invisible.
+    if (reducedMotion() || typeof IntersectionObserver === 'undefined') {
+      node.classList.add('is-visible')
+      return
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue
+          // A stagger read by CSS, so no timer is needed per card.
+          node.style.setProperty('--reveal-delay', `${delayMs}ms`)
+          node.classList.add('is-visible')
+          observer.disconnect()
+        }
+      },
+      // Fires slightly before the element reaches the fold, so the motion
+      // has finished by the time it is properly in view.
+      { rootMargin: '0px 0px -10% 0px', threshold: 0.1 },
+    )
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [delayMs])
+
+  return ref
 }

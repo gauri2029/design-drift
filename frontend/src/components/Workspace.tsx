@@ -14,7 +14,7 @@ import { buildIssues, issueHeadline, summarise, verdict, type Issue } from '../l
 import { useCursorLight, withViewTransition } from '../lib/motion'
 import { DriftCanvas, type CanvasMode } from './DriftCanvas'
 import { IssueDock } from './IssueDock'
-import { Button, CountUp, EmptyState, Label, Status, Tabs } from './ui'
+import { Button, CountUp, EmptyState, Label, Status, Tabs, Thumb } from './ui'
 
 type View = 'drift' | 'fix' | 'runs'
 
@@ -66,9 +66,34 @@ export function Workspace({ project }: { project: Project }) {
     <div className="min-w-0">
       <header className="flex flex-wrap items-center justify-between gap-x-6 gap-y-4">
         <div className="min-w-0">
-          <h1 className="truncate text-[28px] font-bold leading-tight text-ink">{project.name}</h1>
+          <h1 className="truncate text-[22px] font-bold leading-tight text-ink sm:text-[28px]">
+            {project.name}
+          </h1>
           <p className="mt-1 flex flex-wrap items-center gap-x-2 font-mono text-[12px] text-ink-faint">
-            <span className="truncate">{project.target_url}</span>
+            {/* The page under test, openable. It was plain text, which
+                meant copying it out by hand to look at the thing the whole
+                run is about. */}
+            <a
+              href={project.target_url}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex max-w-full items-center gap-1 truncate underline-offset-4 transition-colors duration-200 hover:text-accent-hi hover:underline"
+            >
+              <span className="truncate">{project.target_url}</span>
+              <svg
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+                className="h-3 w-3 shrink-0"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M7 17 17 7M9 7h8v8" />
+              </svg>
+              <span className="sr-only">(opens in a new tab)</span>
+            </a>
             {analysis && (
               <>
                 <span aria-hidden="true">·</span>
@@ -179,7 +204,7 @@ export function Workspace({ project }: { project: Project }) {
  *
  * A run is tens of seconds of browser work and model calls. A spinner can't
  * distinguish "working" from "hung", so each agent announces itself as it
- * finishes. Every line comes from a real SSE event — no invented stage list
+ * finishes. Every line comes from a real SSE event - no invented stage list
  * padding it out, which is why it starts short and grows. */
 function RunProgress({ progress }: { progress: { node: string; label: string }[] }) {
   return (
@@ -194,7 +219,7 @@ function RunProgress({ progress }: { progress: { node: string; label: string }[]
             {progress.length === 0 ? 'Starting the run' : 'Checking your page'}
           </p>
           <p className="text-[13px] text-ink-faint">
-            Opening a browser and calling the models — this takes a moment.
+            Opening a browser and calling the models - this takes a moment.
           </p>
         </div>
       </div>
@@ -367,7 +392,7 @@ function IssueCard({
   )
 }
 
-/** Review, apply, verify — the three consequential steps, in order. */
+/** Review, apply, verify - the three consequential steps, in order. */
 function Fix({
   project,
   analysis,
@@ -395,6 +420,8 @@ function Fix({
   const [error, setError] = useState<string | null>(null)
   const [verifyUrl, setVerifyUrl] = useState('')
   const [verifyOpen, setVerifyOpen] = useState(false)
+  // Dismissing is per-run: a new run's dock should appear again.
+  const [dockHidden, setDockHidden] = useState(false)
 
   const approved = Object.values(decisions).filter((d) => d === 'approved').length
   const written = (analysis.fix_application?.fixes ?? []).filter((f) => f.applied).length
@@ -441,30 +468,23 @@ function Fix({
       )}
 
       {/* The action dock. Floats above the list and appears only when there
-          is something to do — a sticky side rail saying "approve something
+          is something to do - a sticky side rail saying "approve something
           first" was a permanent column of instructions. */}
-      {(approved > 0 || written > 0) && (
-        <div className="sticky bottom-5 z-30 mt-5 flex justify-center">
-          <div className="glass-deep animate-rise w-full max-w-2xl rounded-3xl p-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <p className="min-w-0 flex-1 text-[13px] leading-relaxed text-ink-dim">
-                {written > 0 ? (
-                  <>
-                    <span className="font-medium text-ink">
-                      {written} {written === 1 ? 'change' : 'changes'} written.
-                    </span>{' '}
-                    Nothing was staged, committed or pushed — your git history is the undo.
-                  </>
-                ) : (
-                  <>
-                    <span className="font-medium text-ink">
-                      {approved} {approved === 1 ? 'fix' : 'fixes'} approved.
-                    </span>{' '}
-                    Nothing touches your files until you apply.
-                  </>
-                )}
-              </p>
-              <div className="flex shrink-0 gap-2">
+      {(approved > 0 || written > 0) && !dockHidden && (
+        <div className="sticky bottom-4 z-30 mt-5 flex justify-center">
+          {/* One line and the actions, on a single row. The explanation
+              that used to live here is in the outcome panel above, where
+              there is room for it. */}
+          <div className="glass-deep animate-rise flex w-full max-w-2xl items-center gap-3 rounded-2xl py-2 pl-4 pr-2">
+            <p className="min-w-0 flex-1 truncate text-[13px] text-ink-dim">
+              <span className="font-medium text-ink">
+                {written > 0
+                  ? `${written} ${written === 1 ? 'change' : 'changes'} written`
+                  : `${approved} ${approved === 1 ? 'fix' : 'fixes'} approved`}
+              </span>
+              {written > 0 ? '' : '. Nothing changes until you apply.'}
+            </p>
+            <div className="flex shrink-0 items-center gap-2">
                 {written > 0 && (
                   <Button
                     size="sm"
@@ -476,35 +496,93 @@ function Fix({
                     {analysis.verification ? 'Verify again' : 'Verify'}
                   </Button>
                 )}
-                {approved > 0 && (
-                  <Button variant="primary" disabled={busy} onClick={() => void saveAndApply()}>
-                    {busy ? 'Applying…' : `Apply ${approved}`}
-                  </Button>
-                )}
-                {written > 0 && approved === 0 && (
-                  <Button
-                    variant="secondary"
-                    disabled={busy}
-                    onClick={() => void act(() => onApply(analysis.id))}
-                  >
-                    Apply again
-                  </Button>
-                )}
-                {written > 0 && (
-                  /* Design Drift never pushes or opens a PR, so this is how
-                     a change reaches a repository: the user applies it. */
-                  <Button
-                    variant="ghost"
-                    disabled={busy}
-                    onClick={() =>
-                      void act(() => downloadAnalysisPatch(project.id, analysis.id))
-                    }
-                  >
-                    Download patch
-                  </Button>
+              {approved > 0 && (
+                <Button
+                  size="sm"
+                  variant="primary"
+                  disabled={busy}
+                  onClick={() => void saveAndApply()}
+                >
+                  {busy ? 'Applying…' : `Apply ${approved}`}
+                </Button>
+              )}
+              {written > 0 && approved === 0 && (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabled={busy}
+                  onClick={() => void act(() => onApply(analysis.id))}
+                >
+                  Apply again
+                </Button>
+              )}
+              {written > 0 && (
+                /* Design Drift never pushes or opens a PR, so this is how
+                   a change reaches a repository: the user applies it. */
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={busy}
+                  onClick={() => void act(() => downloadAnalysisPatch(project.id, analysis.id))}
+                >
+                  Download patch
+                </Button>
+              )}
+              <button
+                type="button"
+                onClick={() => setDockHidden(true)}
+                aria-label="Dismiss"
+                className="grid h-7 w-7 shrink-0 place-items-center rounded-lg text-ink-faint transition-colors duration-200 hover:bg-tint hover:text-ink"
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                  className="h-3.5 w-3.5"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.2"
+                  strokeLinecap="round"
+                >
+                  <path d="M6 6l12 12M18 6 6 18" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+            {/* What just happened, and what is left to do.
+                Applying writes files on the server and changes nothing on
+                screen, so without this the click appears to do nothing and
+                there is no indication the workflow has an end. */}
+            {written > 0 && (
+              <div className="animate-rise mt-4 rounded-2xl border border-ok/30 bg-ok/10 p-4">
+                <p className="flex items-center gap-2 text-[13px] font-medium text-ok">
+                  <span aria-hidden="true">✓</span>
+                  Written to your checkout. Nothing was committed or pushed.
+                </p>
+                <ol className="mt-2.5 space-y-1.5 text-[13px] leading-relaxed text-ink-dim">
+                  <li>
+                    <span className="font-medium text-ink">1.</span> Download the patch and apply
+                    it in your own repository with <code className="text-ink">git apply</code>.
+                    Design Drift never commits or pushes.
+                  </li>
+                  <li>
+                    <span className="font-medium text-ink">2.</span> Rebuild or redeploy the page
+                    so the change is actually live.
+                  </li>
+                  <li>
+                    <span className="font-medium text-ink">3.</span> Run Verify to confirm the
+                    issue is gone and nothing else broke.
+                  </li>
+                </ol>
+                {analysis.verification && (
+                  <p className="mt-3 border-t border-ok/20 pt-3 text-[13px] text-ink-dim">
+                    Verified after your last rebuild. See the result below.
+                  </p>
                 )}
               </div>
-            </div>
+            )}
 
             {verifyOpen && written > 0 && (
               <div className="animate-fade mt-4 space-y-2.5 border-t border-edge pt-4">
@@ -554,19 +632,20 @@ function Fix({
                       </Status>
                     )}
                     {analysis.verification_screenshot_key && (
-                      <img
+                      /* Thumb, not a bare <img>: this endpoint is
+                         owner-gated, so pointing a tag straight at it
+                         401s. It was missed when the other captures moved
+                         to authenticated fetches. */
+                      <Thumb
                         src={verificationProductionUrl(project.id, analysis.id)}
                         alt="The page after the fixes were applied"
-                        className="mt-2 max-h-48 w-full rounded-xl border border-edge object-cover object-top"
+                        className="mt-2 max-h-48 w-full rounded-xl border border-edge"
                       />
                     )}
                   </div>
                 )}
               </div>
             )}
-          </div>
-        </div>
-      )}
     </div>
   )
 }

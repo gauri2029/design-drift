@@ -3,7 +3,7 @@ import { authHeader } from './auth'
 /** Read-only GitHub browsing: installations, repositories, branches.
  *
  * Every call is authenticated and scoped server-side to the signed-in
- * user's own installations — this module can't widen that, it only asks.
+ * user's own installations - this module can't widen that, it only asks.
  */
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000'
@@ -23,7 +23,7 @@ export interface Repository {
   private: boolean
   default_branch: string
   // False while private-repository analysis is deferred. The picker shows
-  // the repo and disables it, rather than hiding it — someone who installed
+  // the repo and disables it, rather than hiding it - someone who installed
   // the App on a private repo should see why it isn't selectable.
   analyzable: boolean
   reason: string | null

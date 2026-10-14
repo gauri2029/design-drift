@@ -1,11 +1,11 @@
 import { Button, BrandMark, Label, ThemeToggle } from './ui'
-import { useCursorLight } from '../lib/motion'
+import { useCursorLight, useReveal } from '../lib/motion'
 
 const REPO_URL = 'https://github.com/gauri2029/design-drift'
 
 /** What the product does, in the order it does it.
  *
- * Every step here maps to a real agent in backend/app/agents — nothing
+ * Every step here maps to a real agent in backend/app/agents - nothing
  * aspirational. If a step is removed from the workflow it should come out
  * of this list too.
  */
@@ -45,60 +45,88 @@ export function Landing({
   onGetStarted: () => void
   onSignIn: () => void
 }) {
-  // The portfolio's cursor light, on the hero only — once per page is a
+  // The portfolio's cursor light, on the hero only - once per page is a
   // flourish, on every section it's noise.
   const hero = useCursorLight<HTMLDivElement>()
+  const facts = useReveal<HTMLDListElement>()
+  const safeguard = useReveal<HTMLDivElement>()
 
   return (
     <div className="min-h-screen">
-      {/* Visually hidden until focused — see .skip-link in index.css. */}
+      {/* Visually hidden until focused - see .skip-link in index.css. */}
       <a href="#what-it-does" className="skip-link">
         Skip to what it does
       </a>
 
       <header className="sticky top-0 z-40 border-b border-edge bg-void/50 backdrop-blur-2xl">
-        <div className="mx-auto flex max-w-[1100px] items-center justify-between gap-3 px-6 py-3.5">
-          <div className="flex items-center gap-2.5">
-            <span className="text-accent">
+        <div className="mx-auto flex max-w-[1100px] items-center justify-between gap-3 px-5 py-3.5 sm:px-6">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <span className="shrink-0 text-accent">
               <BrandMark className="h-6 w-6" />
             </span>
-            <span className="font-display text-[17px] font-bold tracking-[-0.02em] text-ink">
+            {/* Nowrap: at 360px this wrapped to two lines and pushed the
+                header to double height. */}
+            <span className="truncate font-display text-[15px] font-bold tracking-[-0.02em] text-ink sm:text-[17px]">
               Design Drift
             </span>
           </div>
-          <div className="flex items-center gap-2">
-            <ThemeToggle />
-            <Button variant="ghost" size="sm" onClick={onSignIn}>
+          <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
+            {/* Hidden on the narrowest screens: with three controls the
+                header collided with the wordmark at 360px, and this is the
+                one a first-time visitor is least likely to reach for. */}
+            <span className="hidden xs:inline-flex">
+              <ThemeToggle />
+            </span>
+            {/* Sign in is reachable from the hero at phone width, so the
+                header keeps only the primary action and stays one line. */}
+            <Button variant="ghost" size="sm" onClick={onSignIn} className="hidden sm:inline-flex">
               Sign in
             </Button>
-            <Button variant="primary" size="sm" onClick={onGetStarted}>
+            <Button variant="primary" size="sm" onClick={onGetStarted} className="whitespace-nowrap">
               Get started
             </Button>
           </div>
         </div>
       </header>
 
-      <main className="mx-auto max-w-[1100px] px-6">
+      <main className="mx-auto max-w-[1100px] px-5 sm:px-6">
         {/* --- Hero --- */}
         <section
           onPointerMove={hero.onPointerMove}
           className="lit animate-rise pb-14 pt-20 text-center sm:pb-16 sm:pt-28"
         >
-          <span className="inline-flex items-center gap-2 rounded-full border border-edge-hi bg-tint px-3.5 py-1.5 text-[12px] font-medium text-ink-dim">
+          {/* The product's name, stated once at full size. The header
+              wordmark is small and scrolls away, so the hero never
+              actually said what this is called. */}
+          <div className="flex items-center justify-center gap-2.5">
+            <span className="text-accent">
+              <BrandMark className="h-7 w-7" />
+            </span>
+            <span className="font-display text-[22px] font-bold tracking-[-0.02em] text-ink">
+              Design Drift
+            </span>
+          </div>
+
+          <span className="mt-5 inline-flex items-center gap-2 rounded-full border border-edge-hi bg-tint px-3.5 py-1.5 text-[12px] font-medium text-ink-dim">
             <span aria-hidden="true" className="text-accent">
               ◆
             </span>
             Design QA, run by agents
           </span>
 
-          <h1 className="font-display mx-auto mt-7 max-w-[20ch] text-[clamp(2.4rem,7vw,4.1rem)] font-bold leading-[1.04] tracking-[-0.04em] text-ink">
+          {/* Solid ink, not a gradient across the whole line: the gradient
+              made the opening words sit at the background's own lightness
+              and the title read as half-missing. One accented word keeps
+              the colour without costing legibility. */}
+          <h1 className="font-display mx-auto mt-7 max-w-[20ch] text-[clamp(2.1rem,6.4vw,4.1rem)] font-bold leading-[1.06] tracking-[-0.035em] text-ink">
             Find where your app <span className="gradient-text">drifted</span> from its design
           </h1>
 
-          <p className="mx-auto mt-6 max-w-[54ch] text-[17px] leading-relaxed text-ink-dim">
-            Design Drift compares a Figma frame against the page you actually shipped, explains
-            every difference in plain language, and traces it back to the line of code that caused
-            it.
+          {/* Quieter than the headline it sits under: same family, lower
+              contrast, narrower measure. It was competing before. */}
+          <p className="mx-auto mt-5 max-w-[48ch] text-[15px] leading-relaxed text-ink-faint sm:text-base">
+            Compare a Figma frame against the page you shipped, in plain language, traced back to
+            the line of code behind it.
           </p>
 
           <div className="mt-10 flex flex-wrap items-center justify-center gap-3">
@@ -121,7 +149,7 @@ export function Landing({
             </a>
           </div>
 
-          <dl className="mt-16 grid gap-px overflow-hidden rounded-2xl border border-edge sm:grid-cols-3">
+          <dl ref={facts} className="reveal mt-14 grid gap-px overflow-hidden rounded-2xl border border-edge sm:grid-cols-3">
             {FACTS.map((fact) => (
               <div key={fact.label} className="bg-raised px-5 py-5">
                 <dt className="font-display text-[19px] font-bold tracking-[-0.02em] text-ink">
@@ -146,23 +174,7 @@ export function Landing({
 
           <ol className="mt-12 space-y-3">
             {STEPS.map((step, index) => (
-              <li
-                key={step.title}
-                className="tilt group flex gap-5 rounded-2xl border border-edge bg-raised p-5 transition-colors duration-200 hover:border-edge-hi sm:p-6"
-              >
-                <span
-                  aria-hidden="true"
-                  className="font-mono text-[13px] font-medium text-accent-hi/70 transition-colors duration-200 group-hover:text-accent-hi"
-                >
-                  {String(index + 1).padStart(2, '0')}
-                </span>
-                <div className="min-w-0">
-                  <h3 className="font-display text-[17px] font-semibold tracking-[-0.01em] text-ink">
-                    {step.title}
-                  </h3>
-                  <p className="mt-1.5 text-sm leading-relaxed text-ink-dim">{step.body}</p>
-                </div>
-              </li>
+              <Step key={step.title} step={step} index={index} />
             ))}
           </ol>
         </section>
@@ -171,7 +183,7 @@ export function Landing({
             fine print. An agent that edits your source is only acceptable
             if you know exactly where the boundary is. --- */}
         <section className="border-t border-edge py-20 sm:py-24">
-          <div className="glass rounded-3xl p-7 sm:p-10">
+          <div ref={safeguard} className="glass reveal rounded-3xl p-6 sm:p-10">
             <Label>Nothing happens without you</Label>
             <h2 className="font-display mt-3 max-w-[26ch] text-[clamp(1.6rem,3.5vw,2.2rem)] font-bold leading-tight tracking-[-0.03em] text-ink">
               It proposes. You decide.
@@ -201,5 +213,35 @@ export function Landing({
         </div>
       </footer>
     </div>
+  )
+}
+
+
+/** One workflow step. Split out so each can hold its own reveal ref.
+ *
+ * The stagger is capped: past the fifth card the delay would outlast the
+ * scroll that triggered it, and the card would appear after you had
+ * already read past it.
+ */
+function Step({ step, index }: { step: { title: string; body: string }; index: number }) {
+  const ref = useReveal<HTMLLIElement>(Math.min(index, 4) * 70)
+  return (
+    <li
+      ref={ref}
+      className="reveal tilt pressable group flex gap-4 rounded-2xl border border-edge bg-raised p-5 hover:border-edge-hi sm:gap-5 sm:p-6"
+    >
+      <span
+        aria-hidden="true"
+        className="font-mono text-[13px] font-medium text-accent-hi/70 transition-colors duration-200 group-hover:text-accent-hi"
+      >
+        {String(index + 1).padStart(2, '0')}
+      </span>
+      <div className="min-w-0">
+        <h3 className="font-display text-[16px] font-semibold tracking-[-0.01em] text-ink sm:text-[17px]">
+          {step.title}
+        </h3>
+        <p className="mt-1.5 text-sm leading-relaxed text-ink-dim">{step.body}</p>
+      </div>
+    </li>
   )
 }

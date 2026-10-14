@@ -15,7 +15,7 @@ export type CanvasMode = 'reveal' | 'split' | 'diff'
 /** The drift canvas: the design and the live page staged as one object.
  *
  * This is the app's centre of gravity. Every other view answers a question
- * about the work; this one *is* the work. So it gets the room — one large
+ * about the work; this one *is* the work. So it gets the room - one large
  * stage with the comparison filling it, and every control floating over it
  * in glass rather than boxed beside it.
  *
@@ -43,8 +43,11 @@ export function DriftCanvas({
   // handed to <img> as blob URLs. Resolved once here rather than per tag:
   // the same three sources are rendered by four different <img>s below,
   // and fetching each one per tag would download them twice.
-  const designSrc = useAuthedImage(designUrl) ?? ''
-  const productionSrc = useAuthedImage(productionUrl) ?? ''
+  // Null until the authed fetch resolves. Rendering <img src=""> in the
+  // meantime makes the browser re-request the current page as the image,
+  // which it warns about in the console and which costs a real request.
+  const designSrc = useAuthedImage(designUrl)
+  const productionSrc = useAuthedImage(productionUrl)
   const diffSrc = useAuthedImage(diffUrl) ?? undefined
   const [zoom, setZoom] = useState(1)
   const [reveal, setReveal] = useState(50)
@@ -99,7 +102,7 @@ export function DriftCanvas({
     { id: 'reveal', label: 'Reveal', enabled: true },
     { id: 'split', label: 'Split', enabled: true },
     // Keyed on the URL, not the fetched blob: whether a diff exists is
-    // known immediately, while its bytes arrive a moment later — and a tab
+    // known immediately, while its bytes arrive a moment later - and a tab
     // that vanishes and returns reads as a glitch.
     { id: 'diff', label: 'Diff', enabled: Boolean(diffUrl) },
   ]
@@ -167,22 +170,34 @@ export function DriftCanvas({
           >
             {/* Pinned to the stage rather than the image: a label that
                 scrolls away with the content stops naming anything. */}
-            <SideLabel className="left-4">Design</SideLabel>
-            <SideLabel className="right-4">Live</SideLabel>
+            {/* Each label is clipped to its own side of the divider, so
+                neither can sit on top of the other's image when the
+                divider is dragged near an edge. */}
+            <div
+              className="pointer-events-none absolute inset-0 z-20 overflow-hidden"
+              style={{ clipPath: `inset(0 ${100 - reveal}% 0 0)` }}
+            >
+              <SideLabel className="left-4">Design</SideLabel>
+            </div>
+            <div
+              className="pointer-events-none absolute inset-0 z-20 overflow-hidden"
+              style={{ clipPath: `inset(0 0 0 ${reveal}%)` }}
+            >
+              <SideLabel className="right-4">Live</SideLabel>
+            </div>
             <div
               className={`relative select-none ${dragging ? 'cursor-ew-resize' : ''}`}
               style={{ width: `${zoom * 100}%` }}
             >
-              <img src={designSrc} alt="The design" className="block w-full" draggable={false} />
+              <Capture src={designSrc} alt="The design" className="block w-full" />
               <div
                 className="absolute inset-0 overflow-hidden"
                 style={{ clipPath: `inset(0 0 0 ${reveal}%)` }}
               >
-                <img
+                <Capture
                   src={productionSrc}
                   alt="The live page, revealed to the right of the divider"
                   className="block w-full"
-                  draggable={false}
                 />
               </div>
               <Divider reveal={reveal} onGrab={() => setDragging(true)} dragging={dragging} />
@@ -220,7 +235,7 @@ export function DriftCanvas({
             className="relative max-h-[58vh] overflow-auto"
           >
             <SideLabel className="left-4">Differences</SideLabel>
-            <img
+            <Capture
               src={diffSrc}
               alt="Every pixel that differs between the design and the live page"
               className="block"
@@ -233,7 +248,7 @@ export function DriftCanvas({
       {mismatch !== undefined && (
         <p className="mt-3 text-center text-[13px] text-ink-faint">
           <span className="font-mono tabular-nums text-ink-dim">{mismatch.toFixed(2)}%</span> of
-          pixels differ — a diagnostic signal, not a score. One shifted element or a different page
+          pixels differ - a diagnostic signal, not a score. One shifted element or a different page
           height can dominate it.
         </p>
       )}
@@ -307,7 +322,7 @@ function Pane({
 }: {
   paneRef: React.RefObject<HTMLDivElement | null>
   label: string
-  src: string
+  src: string | null
   zoom: number
   onScroll: () => void
   onWheel: (event: WheelEvent) => void
@@ -323,10 +338,10 @@ function Pane({
         onWheel={onWheel}
         tabIndex={0}
         role="group"
-        aria-label={`${label}. Scroll to pan — both panes move together.`}
+        aria-label={`${label}. Scroll to pan - both panes move together.`}
         className="max-h-[58vh] overflow-auto"
       >
-        <img src={src} alt={label} className="block" style={{ width: `${zoom * 100}%` }} />
+        <Capture src={src} alt={label} className="block" style={{ width: `${zoom * 100}%` }} />
       </div>
     </div>
   )
@@ -334,4 +349,29 @@ function Pane({
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value))
+}
+
+
+/** A capture that renders nothing until its bytes have arrived.
+ *
+ * The screenshots are owner-gated, so they are fetched with a token and
+ * handed over as blob URLs, which means there is a moment with no src.
+ * An `<img src="">` in that moment makes the browser re-request the
+ * current page as the image: a wasted round trip, and a console warning
+ * on every render. Holding the element back is both quieter and cheaper,
+ * and the surrounding layout already sizes itself from the container.
+ */
+function Capture({
+  src,
+  alt,
+  className,
+  style,
+}: {
+  src: string | null
+  alt: string
+  className?: string
+  style?: React.CSSProperties
+}) {
+  if (!src) return null
+  return <img src={src} alt={alt} className={className} style={style} draggable={false} />
 }

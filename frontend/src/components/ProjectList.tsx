@@ -4,7 +4,7 @@ import { Thumb } from './ui'
 
 /** The projects, as the frames you designed.
  *
- * The list this replaces showed `AbC123XyZ · 94:2143` under each name — the
+ * The list this replaces showed `AbC123XyZ · 94:2143` under each name - the
  * Figma file key and node id, which identify a project to the API and to
  * nobody else. A thumbnail of the frame is what a person recognises, so that
  * is what the row leads with.
@@ -62,10 +62,10 @@ function ProjectRow({
     <li className="animate-rise" style={{ animationDelay: `${Math.min(index, 8) * 45}ms` }}>
       {/* The row and the delete control are siblings, not nested: a button
           inside a button is invalid HTML, and browsers resolve it by
-          dropping one — which would make either the row or the delete
+          dropping one - which would make either the row or the delete
           unclickable. */}
       <div
-        className={`lit tilt group relative flex w-full items-center rounded-2xl border transition-colors duration-200 ${
+        className={`lit tilt pressable group relative flex w-full items-center rounded-2xl border ${
           selected
             ? 'border-accent/40 bg-accent/10'
             : 'border-transparent text-ink-dim hover:border-edge hover:bg-tint'
@@ -97,7 +97,7 @@ function ProjectRow({
           </span>
         </button>
 
-        {/* Appears on hover, and on keyboard focus — otherwise it would be
+        {/* Appears on hover, and on keyboard focus - otherwise it would be
             reachable by tab but invisible to the person pressing tab. */}
         <button
           type="button"

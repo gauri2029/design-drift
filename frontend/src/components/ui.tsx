@@ -103,21 +103,31 @@ export function Label({ children }: { children: ReactNode }) {
   )
 }
 
-/** Two frames, slightly out of register — the thing this tool looks for. */
+/** The mark: a pen nib splitting into a code caret.
+ *
+ * No frames or rectangles. One stroke starts as a drawing nib and ends as
+ * the two angle brackets of markup, with a gap where it crosses over: the
+ * same line, drawn and then built, not quite meeting. A circle holds it so
+ * the shape still reads at 16px in a browser tab.
+ */
 export function BrandMark({ className = 'h-5 w-5' }: { className?: string }) {
   return (
-    <svg viewBox="0 0 24 24" className={className} aria-hidden="true" fill="none">
-      <rect
-        x="2"
-        y="2"
-        width="15"
-        height="15"
-        rx="4"
-        stroke="currentColor"
-        strokeWidth="1.7"
-        opacity="0.45"
-      />
-      <rect x="7" y="7" width="15" height="15" rx="4" stroke="currentColor" strokeWidth="1.7" />
+    <svg
+      viewBox="0 0 24 24"
+      className={className}
+      aria-hidden="true"
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <circle cx="12" cy="12" r="9.4" strokeWidth="1.5" opacity="0.32" />
+      {/* The nib: a stroke tapering to a point, as a pen would draw it. */}
+      <path d="M8.1 15.9 14.3 6.9" strokeWidth="2.1" />
+      <path d="m8.1 15.9 1.1-3 2 1.1z" strokeWidth="1.5" fill="currentColor" />
+      {/* The caret: the same gesture, rendered as code. Offset from the
+          nib's path, which is the drift. */}
+      <path d="m15.2 12.6 2.3 2.2-2.3 2.2" strokeWidth="1.8" />
     </svg>
   )
 }
@@ -164,8 +174,8 @@ export function EmptyState({
 
 /** A screenshot that degrades to a placeholder instead of a broken icon.
  *
- * Captures are fetched from the API and legitimately 404 — a project whose
- * Figma frame was never fetched has no preview — and a broken-image glyph in
+ * Captures are fetched from the API and legitimately 404 - a project whose
+ * Figma frame was never fetched has no preview - and a broken-image glyph in
  * a project list reads as a bug in the app. */
 export function Thumb({
   src,
@@ -181,7 +191,7 @@ export function Thumb({
   // retry, and this does that without a render cascade.
   const [failedSrc, setFailedSrc] = useState<string | null>(null)
   // Screenshots are owner-gated, so an <img> pointed straight at the API
-  // would 401 — the bytes come through fetch with the token instead.
+  // would 401 - the bytes come through fetch with the token instead.
   const objectUrl = useAuthedImage(src)
 
   // No bytes yet, or none coming: the same placeholder serves both.
@@ -190,7 +200,7 @@ export function Thumb({
       <div
         className={`grid place-items-center bg-raised text-ink-faint/50 ${className}`}
         role="img"
-        aria-label={`${alt} — no preview yet`}
+        aria-label={`${alt} - no preview yet`}
       >
         <BrandMark className="h-4 w-4" />
       </div>
@@ -221,7 +231,7 @@ export function CountUp({ value, className = '' }: { value: number; className?: 
  * A sliding pill needs to measure the active tab and animate a second
  * element behind the labels, and when its fill sits close to the track
  * colour the whole group reads as disabled. An underline is one border on
- * one button — it cannot go invisible or land in the wrong place. */
+ * one button - it cannot go invisible or land in the wrong place. */
 export function Tabs<T extends string>({
   tabs,
   current,
@@ -270,7 +280,7 @@ export function Tabs<T extends string>({
  *
  * Replaces the "Connected to backend" badge that used to sit here: a working
  * backend is the normal case, and spending the most valuable corner of the
- * chrome on it said nothing most of the time. Failures still surface — as an
+ * chrome on it said nothing most of the time. Failures still surface - as an
  * error where you tried to act, which is where you can do something. */
 export function ThemeToggle() {
   const [theme, toggle] = useTheme()
@@ -283,7 +293,7 @@ export function ThemeToggle() {
       className="tilt grid h-9 w-9 place-items-center rounded-xl border border-edge text-ink-dim transition-colors duration-200 hover:border-edge-hi hover:text-amber"
     >
       {/* Both glyphs stay mounted and cross-rotate, so the swap is a
-          transform rather than a mount — no layout, no flicker. */}
+          transform rather than a mount - no layout, no flicker. */}
       <span className="relative grid h-4 w-4 place-items-center">
         <svg
           viewBox="0 0 24 24"

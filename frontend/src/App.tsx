@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react'
 import { AuthScreen } from './components/AuthScreen'
 import { Landing } from './components/Landing'
 import { ProjectsPanel } from './components/ProjectsPanel'
-import { BrandMark, Button, ThemeToggle } from './components/ui'
+import { UserMenu } from './components/UserMenu'
+import { BrandMark, ThemeToggle } from './components/ui'
 import { useAuth } from './hooks/useAuth'
 
 /** The four screens this app has. Not a router library: there are four
@@ -37,7 +38,7 @@ function App() {
 
   // Confirming a stored token takes a round trip. Rendering the landing page
   // first and swapping to the workspace would flash marketing copy at
-  // someone already signed in, so this waits — but only when there is a
+  // someone already signed in, so this waits - but only when there is a
   // token to confirm (see useAuth).
   if (auth.status === 'checking') {
     return (
@@ -100,7 +101,7 @@ function App() {
           addresses someone deciding whether to use the tool rather than
           someone using it. */}
       <header className="sticky top-0 z-40 border-b border-edge bg-void/50 backdrop-blur-2xl">
-        <div className="mx-auto flex max-w-[1600px] items-center justify-between gap-3 px-6 py-3.5">
+        <div className="mx-auto flex max-w-[1600px] items-center justify-between gap-3 px-5 py-3.5 sm:px-6">
           <div className="flex items-center gap-2.5">
             <span className="text-accent">
               <BrandMark className="h-6 w-6" />
@@ -109,30 +110,24 @@ function App() {
               Design Drift
             </span>
           </div>
-          <div className="flex items-center gap-2.5">
-            {auth.user && (
-              <span className="hidden text-[13px] text-ink-faint sm:inline">
-                {auth.user.name}
-              </span>
-            )}
+          <div className="flex items-center gap-2">
             <ThemeToggle />
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => {
-                auth.logout()
-                navigate('/')
-              }}
-            >
-              Sign out
-            </Button>
+            {auth.user && (
+              <UserMenu
+                user={auth.user}
+                onSignOut={() => {
+                  auth.logout()
+                  navigate('/')
+                }}
+              />
+            )}
           </div>
         </div>
       </header>
 
       {/* The skip link targets ProjectsPanel's own #workspace, which is
-          past the project rail — the point of skipping. */}
-      <main className="mx-auto max-w-[1600px] px-6 py-8 pe-7">
+          past the project rail - the point of skipping. */}
+      <main className="mx-auto max-w-[1600px] px-5 py-6 sm:px-6 sm:py-8 sm:pe-7">
         <ProjectsPanel />
       </main>
     </div>
