@@ -8,8 +8,8 @@ type Filter = 'all' | 'blocking' | 'todo' | 'done'
 
 /** Every problem in one list, one line each until you open it.
  *
- * What it replaces: four stacked sections — findings, source locations,
- * proposed fixes, verification — each listing the same problems in a
+ * What it replaces: four stacked sections - findings, source locations,
+ * proposed fixes, verification - each listing the same problems in a
  * different order, joined only by a title you matched up by eye. Here one
  * problem is one row, and opening it tells the whole story: what's wrong,
  * where it lives, what the agent would change, and whether that worked.
@@ -191,10 +191,10 @@ function IssueRow({
           {(state === 'no-fix' || state === 'manual') && (
             <p className="rounded-2xl border border-warn/25 bg-warn/8 px-4 py-3 text-[13px] text-warn">
               {state === 'no-fix'
-                ? 'The agent found this in your code but no single edit would reliably fix it — this one needs your judgement.'
+                ? 'Found in your code, but no single edit would reliably fix it. This one needs your judgement.'
                 : location && !location.no_match
-                  ? 'Change this by hand: the right value is a design decision, not a pattern the agent can safely rewrite.'
-                  : 'Change this by hand: the agent couldn’t find this in your source, so there’s nothing to patch.'}
+                  ? 'The right value here is a design decision, not a pattern that can be safely rewritten. Worth changing yourself.'
+                  : 'No matching code was found for this. That usually means the wording describes what changed without quoting any text, class or id that appears in your source, so there is nothing specific to point at. Searching your project for the text in the screenshot is the quickest way in.'}
             </p>
           )}
 

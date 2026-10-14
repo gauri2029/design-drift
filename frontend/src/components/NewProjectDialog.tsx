@@ -6,8 +6,8 @@ import { GitHubSource, type GitHubSelection } from './GitHubSource'
 
 /** Creating a project, as a dialog and as three questions.
  *
- * The form this replaces asked for six fields, two of which — "Figma file
- * key" and "Figma node id" — required reading a URL and retyping two
+ * The form this replaces asked for six fields, two of which - "Figma file
+ * key" and "Figma node id" - required reading a URL and retyping two
  * substrings of it. Both are already in the link Figma hands you, so this
  * takes the link and shows what it understood, which turns a wrong paste
  * into an immediate "couldn't read that" rather than a 404 three steps on.
@@ -69,7 +69,7 @@ export function NewProjectDialog({
         // backend reads null as "not configured", and "" would resolve to
         // the source root itself.
         target_selector: selector.trim() || undefined,
-        // GitHub and a local path are mutually exclusive — the backend
+        // GitHub and a local path are mutually exclusive - the backend
         // rejects both, so the picker wins where one is chosen.
         source_path: github ? undefined : sourcePath.trim() || undefined,
         github_repo_full_name: github?.repoFullName,

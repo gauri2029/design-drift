@@ -10,7 +10,7 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000
 
 // localStorage rather than a cookie: the API is a separate origin and issues
 // a bearer token, so there is no cookie for the browser to attach. The
-// tradeoff is honest — a token here is readable by any script that gets onto
+// tradeoff is honest - a token here is readable by any script that gets onto
 // the page, which is why it expires server-side rather than being trusted
 // indefinitely.
 const TOKEN_KEY = 'design-drift.token'
@@ -69,7 +69,7 @@ async function errorMessage(response: Response, fallback: string): Promise<strin
       if (first?.msg) return first.msg
     }
   } catch {
-    // Not JSON — a proxy error page or an empty body.
+    // Not JSON - a proxy error page or an empty body.
   }
   return fallback
 }
@@ -113,7 +113,7 @@ export async function fetchCurrentUser(): Promise<User | null> {
   }
   if (!response.ok) {
     // A 500 or an unreachable backend is not evidence the token is bad, so
-    // it's kept — this surfaces as an error rather than a silent sign-out.
+    // it's kept - this surfaces as an error rather than a silent sign-out.
     throw new Error('Could not confirm your session.')
   }
   return (await response.json()) as User

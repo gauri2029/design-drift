@@ -62,7 +62,7 @@ export function useAuth(): UseAuthResult {
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Something went wrong.'
       setError(message)
-      // Rethrown so the form knows not to treat this as a success — it also
+      // Rethrown so the form knows not to treat this as a success - it also
       // needs to stop its own submitting state.
       throw new Error(message, { cause: err })
     }

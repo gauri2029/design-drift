@@ -6,7 +6,7 @@ import { useTheme } from './motion'
  *
  * The data-theme attribute is what useTheme writes to the live document,
  * so leaving it set would let the next mount read its own last answer
- * instead of the stored preference — which is exactly the bug this file
+ * instead of the stored preference - which is exactly the bug this file
  * is here to catch.
  */
 function reload() {

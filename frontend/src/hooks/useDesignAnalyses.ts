@@ -29,7 +29,7 @@ interface UseDesignAnalysesResult {
 
 export function useDesignAnalyses(projectId: string): UseDesignAnalysesResult {
   // Assumes the caller remounts this hook per project (`key={project.id}`),
-  // same rationale as useScans — see its comment.
+  // same rationale as useScans - see its comment.
   const [analyses, setAnalyses] = useState<DesignAnalysis[]>([])
   const [status, setStatus] = useState<Status>('loading')
   const [error, setError] = useState<string | null>(null)

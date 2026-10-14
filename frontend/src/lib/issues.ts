@@ -5,8 +5,7 @@ import type { AggregatedFinding, DesignAnalysis, FindingPriority } from './api'
  *
  * The workflow produces findings, source locations, proposed patches,
  * review decisions, write results and verification verdicts as six parallel
- * lists joined only by `finding_title`. Rendering them as six sections —
- * which is what the app did — makes one problem look like six and leaves
+ * lists joined only by `finding_title`. Rendering them as six sections - * which is what the app did - makes one problem look like six and leaves
  * the reader to do the join by eye. Doing it here once is what lets the UI
  * show a problem as a single thing with a single state.
  */
@@ -14,7 +13,7 @@ import type { AggregatedFinding, DesignAnalysis, FindingPriority } from './api'
 /** Severity in the user's words.
  *
  * The backend speaks three dialects at once: `priority` (high/medium/low),
- * `original_severity` (each agent's own word — "critical", "serious",
+ * `original_severity` (each agent's own word - "critical", "serious",
  * "cosmetic"), and axe's impact scale. Showing all three made a list of
  * findings read like a taxonomy exercise. */
 export const SEVERITY: Record<FindingPriority, { label: string; rank: number }> = {
@@ -24,7 +23,7 @@ export const SEVERITY: Record<FindingPriority, { label: string; rank: number }> 
 }
 
 /** Approving a patch and writing it to disk are different events, and the
- * old UI ran them together — a run could show "approved" while the file was
+ * old UI ran them together - a run could show "approved" while the file was
  * untouched, or "not applied" when the change was already there. */
 export type FixState =
   | 'no-fix'
@@ -45,7 +44,7 @@ export const FIX_STATE: Record<
   pending: { label: 'Ready to review', tone: 'accent' },
   approved: { label: 'Approved', tone: 'accent' },
   rejected: { label: 'Skipped', tone: 'neutral' },
-  applied: { label: 'Written — not verified', tone: 'info' },
+  applied: { label: 'Written - not verified', tone: 'info' },
   'already-present': { label: 'Already fixed', tone: 'ok' },
   manual: { label: 'Fix by hand', tone: 'warn' },
   verified: { label: 'Fixed', tone: 'ok' },
@@ -144,8 +143,7 @@ export function buildIssues(analysis: DesignAnalysis): Issue[] {
         if (verdict === 'resolved') return 'verified'
         if (verdict !== null) return 'unresolved'
         if (write?.applied) return 'applied'
-        // The backend's own wording for a change that was already there —
-        // a real outcome, not a failure to apply.
+        // The backend's own wording for a change that was already there - // a real outcome, not a failure to apply.
         if (write?.reason?.includes('already in the file')) return 'already-present'
         if (write) return 'manual'
         if (decision === 'rejected') return 'rejected'

@@ -17,7 +17,7 @@ import { authHeader } from './auth'
 export function useAuthedImage(src: string | undefined): string | null {
   // Keyed on the src the blob came from, so a changed src can't briefly
   // show the previous image, and so clearing it needs no setState in an
-  // effect body (which cascades renders — react-hooks/set-state-in-effect).
+  // effect body (which cascades renders - react-hooks/set-state-in-effect).
   const [loaded, setLoaded] = useState<{ src: string; url: string } | null>(null)
 
   useEffect(() => {
@@ -31,7 +31,7 @@ export function useAuthedImage(src: string | undefined): string | null {
         const response = await fetch(src, { headers: authHeader() })
         if (!response.ok) return
         const blob = await response.blob()
-        // The effect can be torn down mid-await — creating the URL then
+        // The effect can be torn down mid-await - creating the URL then
         // would leak it, since the cleanup below has already run.
         if (revoked) return
         created = URL.createObjectURL(blob)

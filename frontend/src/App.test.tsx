@@ -117,7 +117,7 @@ describe('App', () => {
     fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'a password' } })
     fireEvent.click(screen.getByRole('button', { name: 'Sign in' }))
 
-    // The project rail is the existing dashboard — reaching it means the
+    // The project rail is the existing dashboard - reaching it means the
     // pre-auth workflow is intact behind the login.
     expect(await screen.findByText('Projects')).toBeInTheDocument()
     expect(localStorage.getItem('design-drift.token')).toBe('a-token')
@@ -213,7 +213,10 @@ describe('App', () => {
     go('/app')
     render(<App />)
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Sign out' }))
+    // Sign out lives in the account menu now, so it has to be opened
+    // first - which is also what a person has to do.
+    fireEvent.click(await screen.findByRole('button', { name: /account menu/i }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /sign out/i }))
 
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(/drifted/i)
     expect(localStorage.getItem('design-drift.token')).toBeNull()

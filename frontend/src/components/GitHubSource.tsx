@@ -19,7 +19,7 @@ export interface GitHubSelection {
 /** Pick a repository and branch from the user's GitHub App installations.
  *
  * Read-only throughout. The App holds `Contents: read-only`, so nothing
- * here — or anywhere else in Design Drift — can push, commit or open a
+ * here - or anywhere else in Design Drift - can push, commit or open a
  * pull request.
  */
 export function GitHubSource({
@@ -191,7 +191,7 @@ export function GitHubSource({
                   // someone who installed the App on one can see why.
                   <option key={r.full_name} value={r.full_name} disabled={!r.analyzable}>
                     {r.full_name}
-                    {r.analyzable ? '' : ' — private, not supported yet'}
+                    {r.analyzable ? '' : ' - private, not supported yet'}
                   </option>
                 ))}
               </select>
@@ -219,13 +219,18 @@ export function GitHubSource({
             /* Stated at the point of consent, not buried in a policy: this
                is the moment someone's code starts going to a third party. */
             <div className="rounded-xl border border-warn/30 bg-warn/10 px-3.5 py-2.5">
-              <Label>Before you connect</Label>
-              <p className="mt-1.5 text-[13px] leading-relaxed text-ink-dim">
-                When a scan runs, Design Drift clones this branch and sends the few source
-                snippets that match a finding to your configured AI provider. Only UI source
-                files are ever read — never <code>.env</code> files, keys or build output — and
-                Design Drift never pushes, commits or opens a pull request.
-              </p>
+              <Label>What happens to this code</Label>
+              <ul className="mt-2 space-y-1.5 text-[13px] leading-relaxed text-ink-dim">
+                <li>
+                  Each run clones this branch into a temporary folder. Only the few snippets that
+                  match a finding are sent to your AI provider, not the whole repository.
+                </li>
+                <li>
+                  Only UI source files are read. Never <code>.env</code> files, keys, build output
+                  or anything outside the checkout.
+                </li>
+                <li>Nothing is written back to GitHub. No commits, no branches, no pull requests.</li>
+              </ul>
             </div>
           )}
         </>

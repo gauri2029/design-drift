@@ -299,14 +299,17 @@ async def get_verification_diff_image(
 # What each graph node is called in a progress display. Kept here rather
 # than in the nodes: it's presentation, and the node names themselves are
 # the workflow's own vocabulary (see app.agents.supervisor).
+# Written for someone watching a progress list, not for someone reading
+# the graph. Each one says what happened to *their* page, in the past
+# tense, because by the time a line appears the step is finished.
 NODE_LABELS = {
-    "design_analysis": "Reading the Figma design",
-    "production_analysis": "Capturing production",
-    "visual_comparison": "Comparing design to production",
-    "accessibility": "Checking accessibility",
-    "aggregate_findings": "Merging findings",
-    "code_analysis": "Locating the code behind them",
-    "fix": "Proposing fixes",
+    "design_analysis": "Read your design",
+    "production_analysis": "Opened your page",
+    "visual_comparison": "Compared the two",
+    "accessibility": "Checked accessibility",
+    "aggregate_findings": "Sorted what matters",
+    "code_analysis": "Found the code behind it",
+    "fix": "Drafted the changes",
 }
 
 

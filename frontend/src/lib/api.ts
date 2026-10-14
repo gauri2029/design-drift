@@ -25,7 +25,7 @@ export interface FigmaBoundingBox {
 }
 
 // Mirrors app/integrations/figma/types.py:FigmaNode. Only the fields the
-// preview panel renders are declared here — the backend's model carries
+// preview panel renders are declared here - the backend's model carries
 // more (fills, strokes, text style, ...) for later phases.
 export interface FigmaNode {
   id: string
@@ -103,7 +103,7 @@ export interface ImageDimensions {
 }
 
 // Mirrors app/integrations/imaging/types.py:ComparisonResult. A raw pixel
-// mismatch percentage from deterministic image diffing — NOT an AI-judged
+// mismatch percentage from deterministic image diffing - NOT an AI-judged
 // design fidelity score. Categorized findings/severity require visual
 // reasoning, which is a later phase.
 export interface ComparisonResult {
@@ -128,8 +128,7 @@ export type Breakpoint = (typeof STANDARD_BREAKPOINTS)[number]
 export const MATCH_FIGMA_BREAKPOINT = 'match_figma' as const
 export type ScanMode = Breakpoint | typeof MATCH_FIGMA_BREAKPOINT
 
-// Mirrors app/integrations/axe/types.py. Deterministic axe-core output —
-// no AI interpretation applied yet.
+// Mirrors app/integrations/axe/types.py. Deterministic axe-core output - // no AI interpretation applied yet.
 export interface AxeNode {
   target: string[]
   html: string | null
@@ -209,7 +208,7 @@ export function scanProductionUrl(projectId: string, scanId: string): string {
 }
 
 // Mirrors app/integrations/llm/types.py. Produced by one multimodal Claude
-// call — a judgment layer on top of the deterministic comparison_result
+// call - a judgment layer on top of the deterministic comparison_result
 // and accessibility_report above, not a replacement for either.
 export type FindingCategory =
   | 'layout'
@@ -280,12 +279,12 @@ export function scanDiffUrl(projectId: string, scanId: string): string {
 
 // --- Design QA workflow (LangGraph) --------------------------------------
 //
-// Mirrors app/schemas/design_analysis.py:DesignAnalysisRead — one run of the
+// Mirrors app/schemas/design_analysis.py:DesignAnalysisRead - one run of the
 // multi-agent graph (app/graph/workflow.py). Project-scoped, not
 // scan-scoped: the graph does its own production capture rather than
 // reusing a Scan, so this lives alongside Scan rather than inside it.
 
-// Mirrors app/agents/types.py:DesignAnalysisResult — the Figma side alone.
+// Mirrors app/agents/types.py:DesignAnalysisResult - the Figma side alone.
 export interface DesignComponent {
   name: string
   role: string
@@ -312,7 +311,7 @@ export interface AccessibilityInterpretation {
   most_important_issues: AccessibilityIssue[]
 }
 
-// Every agent's findings merged onto one scale — see
+// Every agent's findings merged onto one scale - see
 // app/agents/aggregate_findings.py. `original_severity` keeps the producing
 // agent's own word, since normalizing onto `priority` is lossy.
 export type FindingSource = 'visual_comparison' | 'accessibility'
@@ -370,19 +369,18 @@ export interface DesignAnalysis {
   accessibility_report: AccessibilityReport | null
   accessibility_interpretation: AccessibilityInterpretation | null
   aggregated_findings: AggregatedFindings | null
-  // Null when the workflow's `problems found?` fork skipped Code Analysis —
-  // no problems, or the project has no source checkout configured.
+  // Null when the workflow's `problems found?` fork skipped Code Analysis - // no problems, or the project has no source checkout configured.
   code_analysis: CodeAnalysisResult | null
-  // Proposed patches only — never applied. Null when nothing was located
+  // Proposed patches only - never applied. Null when nothing was located
   // to patch.
   fix_proposal: FixResult | null
-  // Null until a human reviews the proposals — the pause in
+  // Null until a human reviews the proposals - the pause in
   // docs/architecture.md's workflow. This is the one field on a run
   // written by a person rather than by an agent.
   fix_review: FixReview | null
   // Null until the approved patches are written to the checkout.
   fix_application: FixApplication | null
-  // Null until the applied patches are verified — a second graph run
+  // Null until the applied patches are verified - a second graph run
   // against the rebuilt page.
   verification: VerificationResult | null
   verification_screenshot_key: string | null
@@ -476,7 +474,7 @@ export async function reviewDesignAnalysisFixes(
 }
 
 // Mirrors app/schemas/fix_application.py. Separate from FixReview because
-// a patch can be approved and still not applied — the file may have
+// a patch can be approved and still not applied - the file may have
 // changed in between, and that's the case worth seeing.
 export interface AppliedFix {
   finding_title: string
@@ -512,7 +510,7 @@ export async function applyDesignAnalysisFixes(
 }
 
 // Mirrors app/agents/types.py:VerificationResult. Everything below
-// `regressions` is deterministic and ours — the measurements the verdicts
+// `regressions` is deterministic and ours - the measurements the verdicts
 // have to be read against, not the model's own claims.
 export type VerificationVerdict = 'resolved' | 'unresolved' | 'unclear'
 
@@ -535,8 +533,7 @@ export interface VerificationResult {
   accessibility_delta: AccessibilityDelta
   mismatch_percentage_before: number
   mismatch_percentage_after: number
-  // False when the re-captured page was byte-identical to the original —
-  // usually a deployed target that hasn't been rebuilt, which is a very
+  // False when the re-captured page was byte-identical to the original - // usually a deployed target that hasn't been rebuilt, which is a very
   // different thing from a fix that didn't work.
   production_changed: boolean
 }
@@ -579,7 +576,7 @@ export interface WorkflowProgress {
 /** Run the workflow, reporting each agent as it finishes.
  *
  * Reads the response body incrementally rather than using EventSource,
- * which is GET-only — and this starts work, so it has to be a POST.
+ * which is GET-only - and this starts work, so it has to be a POST.
  *
  * Failures arrive as an `error` event rather than a status code: by the
  * time a node fails the response has already begun, so 200 was sent long

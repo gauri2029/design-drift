@@ -15,7 +15,7 @@ export type CanvasMode = 'reveal' | 'split' | 'diff'
 /** The drift canvas: the design and the live page staged as one object.
  *
  * This is the app's centre of gravity. Every other view answers a question
- * about the work; this one *is* the work. So it gets the room — one large
+ * about the work; this one *is* the work. So it gets the room - one large
  * stage with the comparison filling it, and every control floating over it
  * in glass rather than boxed beside it.
  *
@@ -99,7 +99,7 @@ export function DriftCanvas({
     { id: 'reveal', label: 'Reveal', enabled: true },
     { id: 'split', label: 'Split', enabled: true },
     // Keyed on the URL, not the fetched blob: whether a diff exists is
-    // known immediately, while its bytes arrive a moment later — and a tab
+    // known immediately, while its bytes arrive a moment later - and a tab
     // that vanishes and returns reads as a glitch.
     { id: 'diff', label: 'Diff', enabled: Boolean(diffUrl) },
   ]
@@ -167,8 +167,21 @@ export function DriftCanvas({
           >
             {/* Pinned to the stage rather than the image: a label that
                 scrolls away with the content stops naming anything. */}
-            <SideLabel className="left-4">Design</SideLabel>
-            <SideLabel className="right-4">Live</SideLabel>
+            {/* Each label is clipped to its own side of the divider, so
+                neither can sit on top of the other's image when the
+                divider is dragged near an edge. */}
+            <div
+              className="pointer-events-none absolute inset-0 z-20 overflow-hidden"
+              style={{ clipPath: `inset(0 ${100 - reveal}% 0 0)` }}
+            >
+              <SideLabel className="left-4">Design</SideLabel>
+            </div>
+            <div
+              className="pointer-events-none absolute inset-0 z-20 overflow-hidden"
+              style={{ clipPath: `inset(0 0 0 ${reveal}%)` }}
+            >
+              <SideLabel className="right-4">Live</SideLabel>
+            </div>
             <div
               className={`relative select-none ${dragging ? 'cursor-ew-resize' : ''}`}
               style={{ width: `${zoom * 100}%` }}
@@ -233,7 +246,7 @@ export function DriftCanvas({
       {mismatch !== undefined && (
         <p className="mt-3 text-center text-[13px] text-ink-faint">
           <span className="font-mono tabular-nums text-ink-dim">{mismatch.toFixed(2)}%</span> of
-          pixels differ — a diagnostic signal, not a score. One shifted element or a different page
+          pixels differ - a diagnostic signal, not a score. One shifted element or a different page
           height can dominate it.
         </p>
       )}
@@ -323,7 +336,7 @@ function Pane({
         onWheel={onWheel}
         tabIndex={0}
         role="group"
-        aria-label={`${label}. Scroll to pan — both panes move together.`}
+        aria-label={`${label}. Scroll to pan - both panes move together.`}
         className="max-h-[58vh] overflow-auto"
       >
         <img src={src} alt={label} className="block" style={{ width: `${zoom * 100}%` }} />

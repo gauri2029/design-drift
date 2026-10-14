@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Button, BrandMark, ThemeToggle } from './ui'
 
-/** The sign-in and sign-up screen — one component, two modes.
+/** The sign-in and sign-up screen - one component, two modes.
  *
  * Login and signup differ by exactly one field and one verb, so splitting
  * them into two files would duplicate the layout, the error handling and
