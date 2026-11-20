@@ -8,8 +8,8 @@ Multi-agent design QA: reads a Figma frame, opens your real page in a real
 browser, reports what drifted, traces it to the line of code, and drafts a
 fix you approve.
 
-**Live demo:** _deploying, see [docs/deployment.md](docs/deployment.md)._
-No sign-up: it opens on a real agent run, saved so you can read it.
+**[Live demo](https://design-drift-weld.vercel.app/app)** - no sign-up,
+opens on a real agent run, saved so you can read it.
 
 [![CI](https://github.com/gauri2029/design-drift/actions/workflows/ci.yml/badge.svg)](https://github.com/gauri2029/design-drift/actions/workflows/ci.yml)
 [![Tests](https://img.shields.io/badge/tests-381%20passing-success?style=flat)](#tested-by-trying-to-break-it)
@@ -166,8 +166,8 @@ cd frontend && npm run lint && npm run typecheck && npm test && npm run build
 
 ## The live demo
 
-Once deployed (see [docs/deployment.md](docs/deployment.md)), the demo URL
-opens straight into the workspace with no sign-up.
+<https://design-drift-weld.vercel.app/app> - no sign-up, opens straight into
+the workspace.
 
 It shows a **real** run against a real deployed site: the findings, the
 located files and line numbers, the proposed patch, and the verification

@@ -66,7 +66,7 @@ better.
 
    | Variable | Value |
    |---|---|
-   | `CORS_ORIGINS` | Your Vercel URL, e.g. `https://design-drift.vercel.app`. No trailing slash, no wildcard. |
+   | `CORS_ORIGINS` | Your Vercel URL, e.g. `https://your-project.vercel.app`. No trailing slash, no wildcard. |
    | `GEMINI_API_KEY` | From <https://aistudio.google.com/apikey>. Free tier. |
    | `ANTHROPIC_API_KEY` | Optional. Only read when `LLM_PROVIDER=anthropic`. |
    | `FIGMA_ACCESS_TOKEN` | From Figma → Settings → Personal access tokens. |
@@ -185,11 +185,38 @@ That directory holds `fixture.json` plus the PNGs. Commit it.
 
 ### Load it on Render
 
+The image is built from `backend/` as its context, so `demo/` is not inside
+it: the fixture has to be fetched at seed time. It is committed and the
+repository is public, so a plain download is enough, and no rebuild is
+needed to reseed.
+
+The image is `python:3.12-slim`, which has no `curl` or `wget` - use
+Python's own `urllib` instead, which is always there.
+
 Service → **Shell**:
 
 ```bash
-python -m app.tools.demo_seed --fixture /app/../demo/recipes-gallery
+mkdir -p /tmp/fixture && cd /tmp/fixture
+python3 -c "
+import urllib.request
+base = 'https://raw.githubusercontent.com/gauri2029/design-drift/main/demo/recipes-gallery/'
+for f in ['fixture.json', 'figma.png', 'production.png', 'diff.png']:
+    urllib.request.urlretrieve(base + f, f)
+    print('downloaded', f)
+"
+
+cd /app
+python -m app.tools.demo_seed --fixture /tmp/fixture
 ```
+
+`/tmp` is ephemeral, which is fine: the seed writes the images through the
+storage backend onto the persistent disk at `/data`, so only the download is
+throwaway.
+
+If the fixture is ever re-exported with more images (a verified run adds
+`verification.png` and `verification-diff.png`), add those names to the loop.
+The seeder warns about a file the fixture names but cannot find, rather than
+failing, so a missing one shows up as a broken image and not a broken seed.
 
 Idempotent: re-running replaces the showcase account's projects rather than
 adding a second copy. It refuses to run unless `DEMO_MODE=true`, since a
