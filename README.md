@@ -47,7 +47,7 @@ Design Drift does the tedious half and leaves the judgement to you:
 
 **From Figma to verified fixes — in 43 seconds.**
 
-![Design Drift Demo](docs/images/design-drift.gif)
+![Design Drift Demo](docs/images/design-drift-demo-hq.gif)
 
 **Compare designs → Detect UI drift → Trace source code → Generate patches → Verify fixes**
 
