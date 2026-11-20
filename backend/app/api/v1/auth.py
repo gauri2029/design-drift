@@ -1,21 +1,29 @@
-"""Signup, login, and "who am I".
+"""Signup, login, "who am I", and the two identity dependencies.
 
-No existing route requires authentication: projects, scans and reviews stay
-reachable exactly as before. Signing in gates the frontend and establishes
-the identity that per-user ownership will later attach to, which is why
-`require_current_user` lives here ready to be depended on rather than being
-wired into routes that have no owner column to filter by yet.
+Every project-scoped route is owner-filtered, so it needs an identity:
+
+`require_current_user`
+    A valid bearer token or 401. What every write depends on.
+
+`current_user_or_demo`
+    The same, except an anonymous caller resolves to the read-only showcase
+    account when demo mode is on (see app.services.demo). What the read
+    routes depend on, so the public deployment can be browsed without a
+    signup while still going through the ordinary ownership filter.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.core.security import create_access_token, decode_access_token
 from app.db.session import get_db
 from app.models.user import User
 from app.schemas.auth import LoginRequest, SignupRequest, TokenResponse, UserRead
 from app.services import auth as auth_service
+from app.services import demo as demo_service
+from app.services import rate_limit
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -51,8 +59,65 @@ async def require_current_user(
     return user
 
 
+async def current_user_or_demo(
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
+    db: AsyncSession = Depends(get_db),
+) -> User:
+    """The signed-in user, or the showcase account for an anonymous caller.
+
+    This is what lets a recruiter open the deployed app and browse a real
+    run without signing up. An anonymous request is resolved to the demo
+    account, so it sees exactly that account's projects through the normal
+    owner-filtered queries — no separate unauthenticated read path, and
+    therefore no second place where an ownership filter could be forgotten.
+
+    Depend on this only for *reads*. Writes keep `require_current_user` and
+    additionally pass through `app.services.demo.guard_mutation`, so an
+    anonymous caller resolved to the demo account cannot spend money or
+    change what the demo shows.
+
+    With demo mode off, or before the account is seeded, this behaves
+    identically to `require_current_user`: no token still means 401.
+    """
+    if credentials is not None:
+        return await require_current_user(credentials, db)
+
+    demo_user = await demo_service.get_demo_user(db)
+    if demo_user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="not authenticated",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return demo_user
+
+
 @router.post("/signup", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
-async def signup(payload: SignupRequest, db: AsyncSession = Depends(get_db)) -> TokenResponse:
+async def signup(
+    payload: SignupRequest, request: Request, db: AsyncSession = Depends(get_db)
+) -> TokenResponse:
+    settings = get_settings()
+
+    # The one unauthenticated write on a public deployment. Throttled per IP
+    # so a script can't mint accounts in bulk; see app.services.rate_limit
+    # for what this does and does not protect against.
+    client_ip = request.client.host if request.client else "unknown"
+    if not rate_limit.check(f"signup:{client_ip}", settings.signup_rate_limit_per_hour):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="too many signup attempts from this address; try again later",
+        )
+
+    # Claiming the showcase address would hand someone write access to the
+    # demo data every visitor reads. The address is public (it's in the
+    # deployment config), so this has to be refused explicitly rather than
+    # relying on the seeded row already existing.
+    if payload.email.strip().lower() == settings.demo_user_email.strip().lower():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="an account with that email already exists",
+        )
+
     try:
         user = await auth_service.create_user(db, payload)
     except auth_service.EmailAlreadyRegisteredError as exc:

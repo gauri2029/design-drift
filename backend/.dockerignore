@@ -1,0 +1,25 @@
+# Keeps the build context to the source that actually ships.
+#
+# Without this, `COPY . .` pulls in the developer's .venv (360MB) and type
+# caches (47MB) and layers them on top of the venv the image builds for
+# itself — which is both wasted space and a correctness hazard, since the
+# host venv contains macOS binaries that cannot run in the container.
+
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+htmlcov/
+.coverage
+
+# Tests and their fixtures are not needed to serve the API. CI runs the
+# suite against the repo, not against this image.
+tests/
+
+.python-version
+README.md
+*.md

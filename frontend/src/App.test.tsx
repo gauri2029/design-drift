@@ -49,12 +49,16 @@ describe('App', () => {
     expect(screen.queryByText('Projects')).not.toBeInTheDocument()
   })
 
-  it('does not call the API at all when there is no stored token', () => {
+  it('makes no authenticated call when there is no stored token', () => {
     stubFetch()
     render(<App />)
 
-    // A landing-page visit shouldn't produce a 401 on every page load.
-    expect(fetch).not.toHaveBeenCalled()
+    // The point is that a landing-page visit produces no 401. It is allowed
+    // to ask /demo/status, which is unauthenticated by design and is how the
+    // app learns whether to offer the public showcase - but nothing that
+    // needs a token may be called, because there isn't one.
+    const called = vi.mocked(fetch).mock.calls.map(([url]) => String(url))
+    expect(called.filter((url) => !url.endsWith('/api/v1/demo/status'))).toEqual([])
   })
 
   it('offers the theme toggle on the landing page and on the auth screens', () => {

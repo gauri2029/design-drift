@@ -77,6 +77,45 @@ class Settings(BaseSettings):
     # back to a second free model when this one is oversubscribed.
     gemini_model: str = "gemini-3.5-flash-lite"
 
+    # --- Demo mode (public portfolio deployment) -----------------------------
+    # When true, the API serves one read-only showcase account that anyone
+    # can browse without signing up, and refuses every cost-bearing or
+    # mutating action on it (see app.services.demo).
+    #
+    # Off by default: a local checkout behaves exactly as before, and a
+    # deployment has to opt in. The gate is enforced server-side rather than
+    # by hiding buttons, because a hidden button is not a permission.
+    demo_mode: bool = False
+    # The showcase account's address. Its projects are what an anonymous
+    # visitor sees; nothing else in the database is reachable without a
+    # token, so this is the whole public surface.
+    demo_user_email: str = "demo@designdrift.app"
+
+    # Per-IP ceiling on signup attempts, which is the one unauthenticated
+    # write a public deployment exposes. 0 disables the limit.
+    signup_rate_limit_per_hour: int = 10
+
+    @property
+    def async_database_url(self) -> str:
+        """`database_url` with an async driver guaranteed.
+
+        Managed Postgres providers hand out a `postgres://` (or
+        `postgresql://`) URL, which SQLAlchemy routes to psycopg2 — a
+        synchronous driver that `create_async_engine` rejects outright. The
+        fix is a scheme rewrite, done here rather than in the deployment
+        config so that pasting a provider's connection string verbatim is
+        correct and there is no second format to remember.
+
+        A URL that already names a driver (`postgresql+asyncpg://`) is left
+        alone, so local .env files and the test suite are unaffected.
+        """
+        url = self.database_url
+        if url.startswith("postgres://"):
+            return "postgresql+asyncpg://" + url[len("postgres://") :]
+        if url.startswith("postgresql://"):
+            return "postgresql+asyncpg://" + url[len("postgresql://") :]
+        return url
+
     @property
     def jwt_secret_is_default(self) -> bool:
         return self.jwt_secret_key == _DEV_JWT_SECRET

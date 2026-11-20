@@ -25,6 +25,11 @@ export function Button({
   'aria-label'?: string
   'aria-expanded'?: boolean
   'aria-pressed'?: boolean
+  /** Why a disabled button is disabled. A native tooltip rather than a
+   * custom one: `disabled` removes a button from the tab order, so a
+   * focus-driven popover would never be reachable anyway. The reason is
+   * also stated in the page text for anyone not using a mouse. */
+  title?: string
 }) {
   const variants = {
     primary:

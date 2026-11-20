@@ -682,3 +682,37 @@ export async function deleteProject(projectId: string): Promise<void> {
     throw new Error(body?.detail ?? `Could not delete that project (${response.status})`)
   }
 }
+
+
+// --- Public demo ---------------------------------------------------------
+//
+// Mirrors app/api/v1/demo.py:DemoStatus. The one unauthenticated endpoint
+// besides health/login/signup.
+
+export interface DemoStatus {
+  enabled: boolean
+  seeded: boolean
+  user_name: string | null
+}
+
+/** Whether this deployment is serving the read-only public showcase.
+ *
+ * Asked once on load. When it comes back enabled and the visitor has no
+ * token, the UI says plainly that the results on screen are stored output
+ * from real agent runs and that executing the agents is disabled here -
+ * rather than letting someone click "Run check" and discover it from a 403
+ * (docs/principles.md #2: no pretending about what the AI is doing).
+ *
+ * A failure is not an error worth showing: the honest fallback is "this is
+ * not a demo", which is what every private deployment and local checkout
+ * is anyway.
+ */
+export async function fetchDemoStatus(): Promise<DemoStatus> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/v1/demo/status`)
+    if (!response.ok) return { enabled: false, seeded: false, user_name: null }
+    return (await response.json()) as DemoStatus
+  } catch {
+    return { enabled: false, seeded: false, user_name: null }
+  }
+}

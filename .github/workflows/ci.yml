@@ -117,3 +117,67 @@ jobs:
       - name: Build
         working-directory: frontend
         run: npm run build
+
+  # The production image is what actually gets deployed, and the two ways
+  # it breaks are both invisible to the other jobs: a Dockerfile change
+  # that stops building, and a Chromium install that stops working. Both
+  # would otherwise be found by a failed deploy.
+  #
+  # Builds but does not push: this is a check, not a release step.
+  docker:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Build the production image
+        uses: docker/build-push-action@v7
+        with:
+          context: ./backend
+          file: ./infra/docker/backend.prod.Dockerfile
+          push: false
+          load: true
+          tags: design-drift-api:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # The image's whole reason for being Docker rather than a plain
+      # Python runtime. A launch failure here means the deployed agents
+      # cannot capture a page, which is most of the product.
+      - name: Chromium launches as the unprivileged user
+        run: |
+          docker run --rm design-drift-api:ci python -c "
+          import asyncio
+          from playwright.async_api import async_playwright
+
+          async def main():
+              async with async_playwright() as p:
+                  browser = await p.chromium.launch()
+                  page = await browser.new_page()
+                  await page.set_content('<h1>ok</h1>')
+                  assert len(await page.screenshot()) > 0
+                  await browser.close()
+                  print('chromium ok')
+
+          asyncio.run(main())
+          "
+
+      # --no-dev is meant to keep the test and lint toolchain out of the
+      # deployed image. A start command that re-synced would undo it
+      # silently, so this asserts the result rather than the intent.
+      - name: The image ships no dev dependencies
+        run: |
+          docker run --rm design-drift-api:ci python -c "
+          import importlib.util as u
+          leaked = [m for m in ('pytest', 'ruff', 'mypy', 'respx') if u.find_spec(m)]
+          assert not leaked, f'dev packages in the production image: {leaked}'
+          print('no dev dependencies')
+          "
+
+      - name: It runs as a non-root user
+        run: |
+          user=$(docker run --rm design-drift-api:ci whoami)
+          test "$user" = appuser || { echo "running as $user, expected appuser"; exit 1; }
+          echo "runs as $user"
