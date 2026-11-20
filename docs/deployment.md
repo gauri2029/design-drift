@@ -108,9 +108,18 @@ a wildcard `CORS_ORIGINS`, or an empty one, rather than starting up unsafe.
 ## 2. Vercel: the frontend
 
 1. Vercel → **Add New** → **Project** → same repo.
-2. Leave the framework preset alone; [`vercel.json`](../vercel.json) sets the
-   build command, the output directory, and the SPA rewrite that makes
-   `/login` and `/app` work on a hard refresh.
+2. **Set Root Directory to `frontend`.** This matters: left at the repository
+   root, Vercel sees both `backend/` and `frontend/`, switches into
+   multi-service mode, and refuses to deploy until the config declares both
+   services. Do not take that offer. The backend launches Chromium and needs
+   a persistent process with about a gigabyte of RAM, which is why it runs on
+   Render as a Docker service; deploying it to Vercel's serverless runtime
+   cannot work and would pay to host it twice.
+
+   With the root set to `frontend`, Vercel detects a plain Vite app and
+   [`frontend/vercel.json`](../frontend/vercel.json) supplies the SPA rewrite
+   that makes `/login` and `/app` survive a hard refresh, plus the caching and
+   security headers.
 3. One environment variable:
 
    ```
