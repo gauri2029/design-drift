@@ -42,17 +42,18 @@ Design Drift does the tedious half and leaves the judgement to you:
 | **Drafts the patch** | A diff, shown to you, applied to nothing |
 | **Verifies the fix** | Re-captures after you rebuild and says whether it actually worked |
 
-<!-- SCREENSHOTS, drop files into docs/images/ and delete the comment markers.
-     Suggested, in this order:
-       drift.png        the Drift view: design vs live, side by side
-       findings.png     the triaged findings list
-       fix.png          a proposed patch with the Approve control
-     A GIF of one run (run.gif) can replace all three.
 
-![The Drift view: the Figma frame beside the live page](docs/images/drift.png)
-![Findings, triaged by severity, each traced to a file and line range](docs/images/findings.png)
-![A proposed patch awaiting human approval](docs/images/fix.png)
--->
+## 🎬 See Design Drift in Action
+
+**From Figma to verified fixes — in 43 seconds.**
+
+![Design Drift Demo](docs/images/design-drift.gif)
+
+**Compare designs → Detect UI drift → Trace source code → Generate patches → Verify fixes**
+
+[🚀 Try the Live Demo](https://design-drift-weld.vercel.app/app)
+
+*Real agent-generated results. Human-reviewed patches. No automatic repository changes.*
 
 It never commits, never pushes, never opens a pull request. The GitHub App's
 permission is `Contents: read-only`, so a write is impossible rather than
