@@ -3,14 +3,16 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.auth import require_current_user
+from app.api.v1.auth import current_user_or_demo, require_current_user
 from app.db.session import get_db
 from app.integrations.figma.exceptions import FigmaAPIError
 from app.integrations.storage.base import StorageBackend
 from app.integrations.storage.local import get_storage_backend
 from app.models.user import User
 from app.schemas.project import ProjectCreate, ProjectRead
+from app.services import demo as demo_service
 from app.services import projects as projects_service
+from app.services.demo import DemoReadOnlyError
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 
@@ -32,7 +34,7 @@ async def create_project(
 @router.get("", response_model=list[ProjectRead])
 async def list_projects(
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_current_user),
+    user: User = Depends(current_user_or_demo),
 ) -> list[ProjectRead]:
     projects = await projects_service.list_projects(db, owner_id=user.id)
     return [ProjectRead.model_validate(project) for project in projects]
@@ -42,7 +44,7 @@ async def list_projects(
 async def get_project(
     project_id: UUID,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_current_user),
+    user: User = Depends(current_user_or_demo),
 ) -> ProjectRead:
     project = await projects_service.get_project(db, project_id, owner_id=user.id)
     if project is None:
@@ -55,7 +57,7 @@ async def delete_project(
     project_id: UUID,
     db: AsyncSession = Depends(get_db),
     storage: StorageBackend = Depends(get_storage_backend),
-    user: User = Depends(require_current_user),
+    user: User = Depends(current_user_or_demo),
 ) -> Response:
     """Delete a project, its runs, and everything they wrote to disk.
 
@@ -67,6 +69,11 @@ async def delete_project(
     if project is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="project not found")
 
+    try:
+        await demo_service.guard_mutation(db, project, "deleting the project")
+    except DemoReadOnlyError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+
     await projects_service.delete_project(db, project, storage)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -76,7 +83,7 @@ async def get_project_figma_screenshot(
     project_id: UUID,
     db: AsyncSession = Depends(get_db),
     storage: StorageBackend = Depends(get_storage_backend),
-    user: User = Depends(require_current_user),
+    user: User = Depends(current_user_or_demo),
 ) -> Response:
     project = await projects_service.get_project(db, project_id, owner_id=user.id)
     if project is None or project.figma_screenshot_key is None:

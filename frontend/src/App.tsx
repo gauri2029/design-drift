@@ -3,8 +3,9 @@ import { AuthScreen } from './components/AuthScreen'
 import { Landing } from './components/Landing'
 import { ProjectsPanel } from './components/ProjectsPanel'
 import { UserMenu } from './components/UserMenu'
-import { BrandMark, ThemeToggle } from './components/ui'
+import { BrandMark, Button, ThemeToggle } from './components/ui'
 import { useAuth } from './hooks/useAuth'
+import { useDemo } from './hooks/useDemo'
 
 /** The four screens this app has. Not a router library: there are four
  * states and no nested or parameterised routes, so `react-router` would be
@@ -22,6 +23,9 @@ function currentRoute(): Route {
 
 function App() {
   const auth = useAuth()
+  // Asked once, and only while signed out: a real user's own projects are
+  // never "the demo", so the request is skipped entirely once signed in.
+  const demo = useDemo(auth.status === 'signed-in')
   const [route, setRoute] = useState<Route>(currentRoute)
 
   // The back/forward buttons change the URL without telling React.
@@ -53,8 +57,13 @@ function App() {
   }
 
   const signedIn = auth.status === 'signed-in'
+  // On a demo deployment, a signed-out visitor who asked for /app gets the
+  // read-only showcase rather than being bounced to the landing page.
+  // Anything they try that costs money is refused by the API, so this
+  // opens up reading and nothing else.
+  const browsingDemo = !signedIn && demo.browsingDemo && route === '/app'
 
-  if (!signedIn) {
+  if (!signedIn && !browsingDemo) {
     // /app while signed out falls through to the landing page rather than
     // rendering a workspace whose requests would have no identity behind
     // them. The URL is corrected so a reload doesn't bounce again.
@@ -112,7 +121,7 @@ function App() {
           </div>
           <div className="flex items-center gap-2">
             <ThemeToggle />
-            {auth.user && (
+            {auth.user ? (
               <UserMenu
                 user={auth.user}
                 onSignOut={() => {
@@ -120,6 +129,18 @@ function App() {
                   navigate('/')
                 }}
               />
+            ) : (
+              /* A demo visitor has no account, so there is no menu to open.
+                 The way in goes here instead - it is the one thing they
+                 might want from this corner of the page. */
+              <div className="flex items-center gap-1.5">
+                <Button size="sm" variant="ghost" onClick={() => navigate('/login')}>
+                  Sign in
+                </Button>
+                <Button size="sm" variant="primary" onClick={() => navigate('/signup')}>
+                  Try it
+                </Button>
+              </div>
             )}
           </div>
         </div>
@@ -128,7 +149,7 @@ function App() {
       {/* The skip link targets ProjectsPanel's own #workspace, which is
           past the project rail - the point of skipping. */}
       <main className="mx-auto max-w-[1600px] px-5 py-6 sm:px-6 sm:py-8 sm:pe-7">
-        <ProjectsPanel />
+        <ProjectsPanel demoLocked={browsingDemo} demoOwnerName={demo.ownerName} />
       </main>
     </div>
   )

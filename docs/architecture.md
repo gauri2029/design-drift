@@ -1,8 +1,8 @@
 # Architecture
 
-This document describes the target architecture for Design Drift. It will
-grow as each phase lands; sections marked **(not yet built)** describe
-where we're heading, not what exists today.
+This document describes Design Drift's architecture as built. Where
+something is still ahead, it says so explicitly; everything else exists in
+the code and is covered by tests.
 
 ## System overview
 
@@ -18,8 +18,8 @@ where we're heading, not what exists today.
 └──────────────┘                └──────┬──────┘                └──────────────┘
                                         │
                               ┌─────────▼─────────┐
-                              │ LangGraph workflow │  (not yet built)
-                              │ (runtime agents)   │
+                              │ LangGraph workflows │
+                              │ (Design QA + verify) │
                               └─────────┬─────────┘
                                         │
                               ┌─────────▼─────────┐
@@ -55,7 +55,7 @@ backend/app/
 ├── agents/       LangGraph runtime nodes            (Supervisor + four inspection agents + aggregation + Code Analysis + Fix built — Phase 3)
 ├── graph/        LangGraph graph definition/state   (Design QA + verification graphs built — Phase 3)
 ├── tools/        Agent tool implementations          (repo_search, anchors, apply_patch built — Phase 3)
-├── integrations/ Figma, Playwright, axe-core clients  (not yet built — Phase 1+)
+├── integrations/ Figma, Playwright, axe-core, GitHub, LLM, storage clients
 └── evals/        AI evaluation harness                (retrieval evals built — Phase 8)
 ```
 
@@ -355,6 +355,58 @@ We are *not* splitting these further (e.g. separate "screenshot agent" vs.
 decision that needs its own autonomy — Production Analysis can call
 Playwright tools directly as deterministic steps within one agent.
 
+## Accounts and ownership
+
+Every project belongs to one user. `Project.owner_id` is a plain column
+rather than a membership table: one owner is what the product does, and a
+join table with a single row per project would be machinery for a feature
+that does not exist.
+
+The enforcement point is one function. `app.services.projects.get_project`
+takes `owner_id` as a **required** argument, so omitting it is a type error
+rather than a silent authorization hole, and every project-scoped route
+reaches a project through it. Sharing later means widening the test in that
+one function to "owns it OR is a member" — no route changes.
+
+Cross-account access returns **404, not 403**. A 403 confirms the id names a
+real project, which is exactly what someone holding a guessed UUID is trying
+to learn.
+
+Two identity dependencies, in `app.api.v1.auth`:
+
+- `require_current_user` — a valid bearer token, or 401. What creating a
+  project depends on.
+- `current_user_or_demo` — the same, except an anonymous caller resolves to
+  the read-only showcase account when demo mode is on. What the reads depend
+  on, and what lets the public deployment be browsed without a sign-up while
+  still going through the ordinary owner-filtered query.
+
+There is deliberately no second, unauthenticated read path: an anonymous
+request becomes an identity and then takes the same route as everyone else,
+so there is no parallel code path where an ownership filter could be
+forgotten.
+
+## The public demo
+
+A deployment can serve one read-only showcase account (`DEMO_MODE`). It
+exists because the workflow needs a real Chromium and real model calls, and a
+public URL that lets anyone trigger those spends the author's API budget on
+whoever finds it.
+
+So the demo serves **stored output from runs that really happened** — the
+findings, the located files and line numbers, the patches, the verification
+verdict — and refuses to start a new one. That distinction is surfaced in the
+UI rather than hidden, which is the same rule as "Avoiding fake AI" below
+applied to the deployment: a disabled button that implies it would work is a
+claim about the system that is not true.
+
+The gate (`app.services.demo.guard_mutation`) keys on the **owner of the
+row**, not on the caller, so it holds for an anonymous visitor, for the demo
+identity itself, and for a signed-in stranger who guessed the project id.
+Mutating routes reach their project through a helper that cannot be used
+without passing through the gate, so a new cost-bearing route cannot skip it
+by remembering only the ownership check.
+
 ## Avoiding "fake AI"
 
 Deterministic tasks use deterministic tools, not LLM calls:
@@ -397,13 +449,24 @@ source. Two constraints on that, both enforced in
   and non-UTF-8 files are skipped too — a committed bundle is never where
   a human fixes a design bug, and it would swamp any prompt it reached.
 
-## Human-in-the-loop (not yet built)
+## Human-in-the-loop
 
-The LangGraph workflow pauses (via checkpointing) before applying a code
-fix. The frontend surfaces Approve / Reject / Request another solution /
-Inspect diff controls. The backend never auto-applies a fix, and the
-product never creates, merges, or pushes a GitHub pull request — the repo
-owner (not the running application) handles Git operations.
+The approval gate sits *outside* the graph, not inside it as an interrupt.
+The Design QA graph runs to completion and persists its proposed patches;
+a separate authenticated request records the review, and a third applies
+the approved ones. Three requests rather than one paused run, because a
+review can take days and a resumable checkpoint held open across that is a
+liability, not a feature — the durable record is the row.
+
+The frontend surfaces Approve / Reject per finding, the diff, and an export.
+The backend never auto-applies a fix, and the product never creates, merges
+or pushes a pull request: the GitHub App's permission is `Contents:
+read-only`, so a write is impossible rather than merely absent from the
+code. The repository owner performs every Git operation.
+
+Agent-created *draft* pull requests are the intended next step (see the
+README's Future work), and would need a write scope the App does not hold
+today.
 
 ## Storage (Phase 0)
 

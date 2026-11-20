@@ -50,6 +50,7 @@ export function Landing({
   const hero = useCursorLight<HTMLDivElement>()
   const facts = useReveal<HTMLDListElement>()
   const safeguard = useReveal<HTMLDivElement>()
+  const comingNext = useReveal<HTMLDivElement>()
 
   return (
     <div className="min-h-screen">
@@ -192,6 +193,36 @@ export function Landing({
               Every patch is shown as a diff against your real file and waits for your approval.
               Applying one writes a backup first, and nothing ever touches your git history - no
               commits, no branches, no pushes.
+            </p>
+          </div>
+        </section>
+        {/* --- What is next. Explicitly labelled as not built yet: the
+            safeguard above is a promise about today's behaviour, and a
+            roadmap item sitting next to it must not read as a feature. --- */}
+        <section className="border-t border-edge py-20 sm:py-24">
+          <div
+            ref={comingNext}
+            className="reveal rounded-3xl border border-dashed border-edge-hi p-6 sm:p-10"
+          >
+            <div className="flex flex-wrap items-center gap-3">
+              <Label>Coming next</Label>
+              <span className="rounded-full border border-edge-hi px-2.5 py-0.5 font-mono text-[11px] uppercase tracking-wider text-ink-faint">
+                Not built yet
+              </span>
+            </div>
+            <h2 className="font-display mt-3 max-w-[26ch] text-[clamp(1.6rem,3.5vw,2.2rem)] font-bold leading-tight tracking-[-0.03em] text-ink">
+              Agent-generated GitHub pull requests
+            </h2>
+            <p className="mt-4 max-w-[58ch] text-[15px] leading-relaxed text-ink-dim">
+              Today an approved patch is yours to take: you review each diff, apply it, and export
+              the result as a <code className="font-mono text-[13px] text-ink-dim">git apply</code>{' '}
+              ready file. The GitHub App is read-only, so nothing can be written back.
+            </p>
+            <p className="mt-3 max-w-[58ch] text-[15px] leading-relaxed text-ink-dim">
+              Next, the same approved patch could open a <strong className="font-semibold text-ink">draft</strong> pull
+              request on a branch, with the findings and evidence as its description - still for a
+              human to review and merge. That needs write scope, which is a boundary worth crossing
+              deliberately rather than quietly.
             </p>
           </div>
         </section>

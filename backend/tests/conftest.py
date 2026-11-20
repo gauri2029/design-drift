@@ -135,6 +135,26 @@ def _reset_figma_cache():
 
 
 @pytest.fixture(autouse=True)
+def _disable_signup_rate_limit(monkeypatch):
+    """Several tests create a handful of accounts in one run.
+
+    The public deployment throttles signup per IP (see
+    app.services.rate_limit), and under the ASGI transport every test
+    shares one client address — so the 7th account in a module would 429
+    and the failure would look like a broken ownership check rather than a
+    throttle. Off in tests; tests/test_demo_mode.py sets its own limit to
+    exercise the limiter itself.
+    """
+    from app.services import rate_limit
+
+    settings = get_settings()
+    monkeypatch.setattr(settings, "signup_rate_limit_per_hour", 0)
+    rate_limit.reset()
+    yield
+    rate_limit.reset()
+
+
+@pytest.fixture(autouse=True)
 def _pin_llm_provider_settings(monkeypatch):
     """Settings() reads the developer's real .env — without this, LLM tests
     would pass or fail depending on whatever LLM_PROVIDER/GEMINI_MODEL the
@@ -222,7 +242,7 @@ async def signed_in_user(request):
     """The account every API test acts as, unless marked `anonymous`."""
     from sqlalchemy import delete
 
-    from app.api.v1.auth import require_current_user
+    from app.api.v1.auth import current_user_or_demo, require_current_user
     from app.db.session import async_session_factory
     from app.main import app
     from app.models.user import User
@@ -237,11 +257,17 @@ async def signed_in_user(request):
         await session.commit()
         await session.refresh(user)
 
+    # Both identity dependencies are overridden. Read routes (and the
+    # mutating ones, so an anonymous visitor to the public demo gets an
+    # explanatory 403 rather than a bare 401) depend on
+    # `current_user_or_demo`; leaving it out made 53 tests 401.
     app.dependency_overrides[require_current_user] = lambda: user
+    app.dependency_overrides[current_user_or_demo] = lambda: user
     try:
         yield user
     finally:
         app.dependency_overrides.pop(require_current_user, None)
+        app.dependency_overrides.pop(current_user_or_demo, None)
         async with async_session_factory() as session:
             # Projects cascade from the owner, so this also clears anything
             # the test created without each test needing to know that.

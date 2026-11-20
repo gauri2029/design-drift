@@ -3,7 +3,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.auth import require_current_user
+from app.api.v1.auth import current_user_or_demo
 from app.db.session import get_db
 from app.integrations.llm.exceptions import LLMNotConfiguredError, LLMResponseError
 from app.integrations.storage.base import StorageBackend
@@ -12,9 +12,11 @@ from app.models.project import Project
 from app.models.scan import Scan
 from app.models.user import User
 from app.schemas.review import ReviewRead
+from app.services import demo as demo_service
 from app.services import projects as projects_service
 from app.services import reviews as reviews_service
 from app.services import scans as scans_service
+from app.services.demo import DemoReadOnlyError
 
 router = APIRouter(prefix="/projects/{project_id}/scans/{scan_id}/reviews", tags=["reviews"])
 
@@ -43,9 +45,13 @@ async def create_review(
     scan_id: UUID,
     db: AsyncSession = Depends(get_db),
     storage: StorageBackend = Depends(get_storage_backend),
-    user: User = Depends(require_current_user),
+    user: User = Depends(current_user_or_demo),
 ) -> ReviewRead:
     project, scan = await _get_scan_or_404(project_id, scan_id, db, user.id)
+    try:
+        await demo_service.guard_mutation(db, project, "running an AI review")
+    except DemoReadOnlyError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
     try:
         review = await reviews_service.create_review(db, project, scan, storage)
     except LLMNotConfiguredError as exc:
@@ -60,7 +66,7 @@ async def list_reviews(
     project_id: UUID,
     scan_id: UUID,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_current_user),
+    user: User = Depends(current_user_or_demo),
 ) -> list[ReviewRead]:
     await _get_scan_or_404(project_id, scan_id, db, user.id)
     reviews = await reviews_service.list_reviews(db, scan_id)

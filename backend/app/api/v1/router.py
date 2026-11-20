@@ -1,10 +1,11 @@
 from fastapi import APIRouter
 
-from app.api.v1 import auth, design_analysis, github, health, projects, reviews, scans
+from app.api.v1 import auth, demo, design_analysis, github, health, projects, reviews, scans
 
 api_v1_router = APIRouter(prefix="/api/v1")
 api_v1_router.include_router(health.router)
 api_v1_router.include_router(auth.router)
+api_v1_router.include_router(demo.router)
 api_v1_router.include_router(github.router)
 api_v1_router.include_router(projects.router)
 api_v1_router.include_router(scans.router)

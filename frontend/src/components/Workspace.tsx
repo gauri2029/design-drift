@@ -12,6 +12,7 @@ import {
 } from '../lib/api'
 import { buildIssues, issueHeadline, summarise, verdict, type Issue } from '../lib/issues'
 import { useCursorLight, withViewTransition } from '../lib/motion'
+import { ComingNext } from './ComingNext'
 import { DriftCanvas, type CanvasMode } from './DriftCanvas'
 import { IssueDock } from './IssueDock'
 import { Button, CountUp, EmptyState, Label, Status, Tabs, Thumb } from './ui'
@@ -26,7 +27,16 @@ type View = 'drift' | 'fix' | 'runs'
  * output, so "is my page okay?" and "which patch am I approving?" lived in
  * the same scroll.
  */
-export function Workspace({ project }: { project: Project }) {
+export function Workspace({
+  project,
+  demoLocked = false,
+}: {
+  project: Project
+  /** True when this is the public showcase being browsed anonymously.
+   * Disables the controls the API would refuse anyway, so the refusal
+   * is visible before the click rather than after it. */
+  demoLocked?: boolean
+}) {
   const {
     latestAnalysis,
     analyses,
@@ -121,9 +131,14 @@ export function Workspace({ project }: { project: Project }) {
           <Button
             variant={counts.pending > 0 ? 'secondary' : 'primary'}
             onClick={() => void run()}
-            disabled={running}
+            disabled={running || demoLocked}
+            title={
+              demoLocked
+                ? 'Disabled on the public demo: a run opens a real browser and calls a model.'
+                : undefined
+            }
           >
-            {running ? 'Running…' : analysis ? 'Run again' : 'Run check'}
+            {running ? 'Running…' : demoLocked ? 'Run check (demo)' : analysis ? 'Run again' : 'Run check'}
           </Button>
         </div>
       </header>
@@ -152,7 +167,12 @@ export function Workspace({ project }: { project: Project }) {
             title="No check has run yet"
             body="A run opens a real browser and calls a model, so it never starts on its own."
             action={
-              <Button variant="primary" size="lg" onClick={() => void run()}>
+              <Button
+                variant="primary"
+                size="lg"
+                onClick={() => void run()}
+                disabled={demoLocked}
+              >
                 Run the first check
               </Button>
             }
@@ -182,6 +202,7 @@ export function Workspace({ project }: { project: Project }) {
             onReview={reviewFixes}
             onApply={applyFixes}
             onVerify={verifyFixes}
+            demoLocked={demoLocked}
           />
         )}
 
@@ -402,6 +423,7 @@ function Fix({
   onReview,
   onApply,
   onVerify,
+  demoLocked = false,
 }: {
   project: Project
   analysis: DesignAnalysis
@@ -414,6 +436,7 @@ function Fix({
   ) => Promise<void>
   onApply: (id: string) => Promise<void>
   onVerify: (id: string, targetUrl?: string) => Promise<void>
+  demoLocked?: boolean
 }) {
   const [decisions, setDecisions] = useState<Record<string, FixDecision>>({})
   const [busy, setBusy] = useState(false)
@@ -489,7 +512,7 @@ function Fix({
                   <Button
                     size="sm"
                     variant="secondary"
-                    disabled={busy}
+                    disabled={busy || demoLocked}
                     onClick={() => setVerifyOpen((v) => !v)}
                     aria-expanded={verifyOpen}
                   >
@@ -500,7 +523,7 @@ function Fix({
                 <Button
                   size="sm"
                   variant="primary"
-                  disabled={busy}
+                  disabled={busy || demoLocked}
                   onClick={() => void saveAndApply()}
                 >
                   {busy ? 'Applying…' : `Apply ${approved}`}
@@ -510,7 +533,7 @@ function Fix({
                 <Button
                   size="sm"
                   variant="secondary"
-                  disabled={busy}
+                  disabled={busy || demoLocked}
                   onClick={() => void act(() => onApply(analysis.id))}
                 >
                   Apply again
@@ -646,6 +669,8 @@ function Fix({
                 )}
               </div>
             )}
+
+      <ComingNext />
     </div>
   )
 }

@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Response, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.auth import require_current_user
+from app.api.v1.auth import current_user_or_demo
 from app.db.session import get_db
 from app.integrations.axe.exceptions import AccessibilityScanError
 from app.integrations.llm.exceptions import LLMNotConfiguredError, LLMResponseError
@@ -18,15 +18,21 @@ from app.models.user import User
 from app.schemas.design_analysis import DesignAnalysisRead
 from app.schemas.fix_review import FixReviewRequest
 from app.schemas.verification import VerificationRequest
+from app.services import demo as demo_service
 from app.services import design_analysis as design_analysis_service
 from app.services import projects as projects_service
 from app.services import verification as verification_service
+from app.services.demo import DemoReadOnlyError
 from app.services.design_analysis import (
     FixApplicationError,
     FixReviewError,
     ProjectNotAnalyzableError,
 )
-from app.services.patch_export import NothingToExportError, build_patch
+from app.services.patch_export import (
+    NothingToExportError,
+    build_patch,
+    build_patch_from_proposal,
+)
 from app.services.verification import NotVerifiableError
 from app.tools.repo_search import SourceNotAccessibleError
 
@@ -46,14 +52,35 @@ async def _get_project_or_404(project_id: UUID, db: AsyncSession, owner_id: UUID
     return project
 
 
+
+async def _get_mutable_project_or_404(
+    project_id: UUID, db: AsyncSession, owner_id: UUID, action: str
+) -> Project:
+    """The caller's project, refused if it's the read-only demo's.
+
+    Mutating routes use this instead of `_get_project_or_404` so that
+    adding a route which spends money or rewrites a stored run cannot
+    silently skip the demo gate: the only convenient way to get the
+    project is the one that also checks.
+    """
+    project = await _get_project_or_404(project_id, db, owner_id)
+    try:
+        await demo_service.guard_mutation(db, project, action)
+    except DemoReadOnlyError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    return project
+
+
 @router.post("", response_model=DesignAnalysisRead, status_code=status.HTTP_201_CREATED)
 async def create_design_analysis(
     project_id: UUID,
     db: AsyncSession = Depends(get_db),
     storage: StorageBackend = Depends(get_storage_backend),
-    user: User = Depends(require_current_user),
+    user: User = Depends(current_user_or_demo),
 ) -> DesignAnalysisRead:
-    project = await _get_project_or_404(project_id, db, user.id)
+    project = await _get_mutable_project_or_404(
+        project_id, db, user.id, "starting a new run"
+    )
     try:
         analysis = await design_analysis_service.create_design_analysis(db, project, storage)
     except ProjectNotAnalyzableError as exc:
@@ -78,7 +105,7 @@ async def create_design_analysis(
 async def list_design_analyses(
     project_id: UUID,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_current_user),
+    user: User = Depends(current_user_or_demo),
 ) -> list[DesignAnalysisRead]:
     await _get_project_or_404(project_id, db, user.id)
     analyses = await design_analysis_service.list_design_analyses(db, project_id)
@@ -91,7 +118,7 @@ async def get_design_analysis_production_screenshot(
     design_analysis_id: UUID,
     db: AsyncSession = Depends(get_db),
     storage: StorageBackend = Depends(get_storage_backend),
-    user: User = Depends(require_current_user),
+    user: User = Depends(current_user_or_demo),
 ) -> Response:
     await _get_project_or_404(project_id, db, user.id)
     analysis = await design_analysis_service.get_design_analysis(db, project_id, design_analysis_id)
@@ -110,7 +137,7 @@ async def get_design_analysis_diff_image(
     design_analysis_id: UUID,
     db: AsyncSession = Depends(get_db),
     storage: StorageBackend = Depends(get_storage_backend),
-    user: User = Depends(require_current_user),
+    user: User = Depends(current_user_or_demo),
 ) -> Response:
     await _get_project_or_404(project_id, db, user.id)
     analysis = await design_analysis_service.get_design_analysis(db, project_id, design_analysis_id)
@@ -127,14 +154,14 @@ async def review_design_analysis_fixes(
     design_analysis_id: UUID,
     request: FixReviewRequest,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_current_user),
+    user: User = Depends(current_user_or_demo),
 ) -> DesignAnalysisRead:
     """The human-review pause in docs/architecture.md's workflow.
 
     PUT, not POST: a review is one current answer per run, and a reviewer
     changing their mind replaces it rather than adding a second one.
     """
-    await _get_project_or_404(project_id, db, user.id)
+    await _get_mutable_project_or_404(project_id, db, user.id, "recording a fix review")
     analysis = await design_analysis_service.get_design_analysis(db, project_id, design_analysis_id)
     if analysis is None:
         raise HTTPException(
@@ -154,7 +181,7 @@ async def apply_design_analysis_fixes(
     project_id: UUID,
     design_analysis_id: UUID,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_current_user),
+    user: User = Depends(current_user_or_demo),
 ) -> DesignAnalysisRead:
     """Write this run's approved patches into the project's source checkout.
 
@@ -162,7 +189,9 @@ async def apply_design_analysis_fixes(
     being set. It writes files and nothing else — no git, ever
     (docs/principles.md #5).
     """
-    project = await _get_project_or_404(project_id, db, user.id)
+    project = await _get_mutable_project_or_404(
+        project_id, db, user.id, "applying patches"
+    )
     analysis = await design_analysis_service.get_design_analysis(db, project_id, design_analysis_id)
     if analysis is None:
         raise HTTPException(
@@ -182,7 +211,7 @@ async def download_design_analysis_patch(
     project_id: UUID,
     design_analysis_id: UUID,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_current_user),
+    user: User = Depends(current_user_or_demo),
 ) -> Response:
     """The applied changes as a unified diff, for the user to take anywhere.
 
@@ -198,16 +227,28 @@ async def download_design_analysis_patch(
             status_code=status.HTTP_404_NOT_FOUND, detail="design analysis not found"
         )
 
+    # Preferred: diff the backup against the patched file, which shows the
+    # change that actually landed on disk.
+    #
+    # Fallback: rebuild the diff from the stored proposal. A run's checkout
+    # is scratch space — cleaned up, lost on redeploy, absent from a
+    # restored database and from the public demo — and without this the
+    # most useful artifact of a finished run would expire with the
+    # workspace. The proposal carries both sides of every patch, each
+    # verified against the real file when it was proposed.
+    diff: str | None = None
     try:
         source_root = design_analysis_service.applied_source_root(project, analysis)
-        if source_root is None:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="this project has no source checkout, so there is nothing to export",
-            )
-        diff = build_patch(analysis, source_root)
-    except (NothingToExportError, FixApplicationError, SourceNotAccessibleError) as exc:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+        if source_root is not None:
+            diff = build_patch(analysis, source_root)
+    except (NothingToExportError, FixApplicationError, SourceNotAccessibleError):
+        diff = None
+
+    if diff is None:
+        try:
+            diff = build_patch_from_proposal(analysis)
+        except NothingToExportError as exc:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
     return Response(
         content=diff,
@@ -227,7 +268,7 @@ async def verify_design_analysis(
     request: VerificationRequest | None = None,
     db: AsyncSession = Depends(get_db),
     storage: StorageBackend = Depends(get_storage_backend),
-    user: User = Depends(require_current_user),
+    user: User = Depends(current_user_or_demo),
 ) -> DesignAnalysisRead:
     """Re-measure the page and judge whether the applied patches worked.
 
@@ -235,7 +276,9 @@ async def verify_design_analysis(
     workflow, so it's an explicit action rather than something that
     follows applying automatically.
     """
-    project = await _get_project_or_404(project_id, db, user.id)
+    project = await _get_mutable_project_or_404(
+        project_id, db, user.id, "running verification"
+    )
     analysis = await design_analysis_service.get_design_analysis(db, project_id, design_analysis_id)
     if analysis is None:
         raise HTTPException(
@@ -268,7 +311,7 @@ async def get_verification_production_screenshot(
     design_analysis_id: UUID,
     db: AsyncSession = Depends(get_db),
     storage: StorageBackend = Depends(get_storage_backend),
-    user: User = Depends(require_current_user),
+    user: User = Depends(current_user_or_demo),
 ) -> Response:
     await _get_project_or_404(project_id, db, user.id)
     analysis = await design_analysis_service.get_design_analysis(db, project_id, design_analysis_id)
@@ -285,7 +328,7 @@ async def get_verification_diff_image(
     design_analysis_id: UUID,
     db: AsyncSession = Depends(get_db),
     storage: StorageBackend = Depends(get_storage_backend),
-    user: User = Depends(require_current_user),
+    user: User = Depends(current_user_or_demo),
 ) -> Response:
     await _get_project_or_404(project_id, db, user.id)
     analysis = await design_analysis_service.get_design_analysis(db, project_id, design_analysis_id)
@@ -322,7 +365,7 @@ async def stream_design_analysis(
     project_id: UUID,
     db: AsyncSession = Depends(get_db),
     storage: StorageBackend = Depends(get_storage_backend),
-    user: User = Depends(require_current_user),
+    user: User = Depends(current_user_or_demo),
 ) -> StreamingResponse:
     """The same run as POST "", streamed as it happens.
 
@@ -340,7 +383,9 @@ async def stream_design_analysis(
     since sent. The client has to read errors off the stream.
     """
 
-    project = await _get_project_or_404(project_id, db, user.id)
+    project = await _get_mutable_project_or_404(
+        project_id, db, user.id, "starting a new run"
+    )
 
     async def events() -> AsyncIterator[str]:
         try:

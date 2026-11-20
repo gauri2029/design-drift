@@ -1,0 +1,126 @@
+# Render Blueprint for the Design Drift API and its database.
+#
+# Apply with: Render dashboard -> New -> Blueprint -> point at this repo.
+# Everything marked `sync: false` is a secret and must be filled in through
+# the dashboard; nothing secret is committed here.
+#
+# The frontend is not in this file. It is a static Vite bundle and goes to
+# Vercel (see vercel.json), which is both free and a better CDN than
+# serving it from this container.
+#
+# Plan note, stated plainly: the `starter` plan below is $7/month and the
+# disk requires it. The free plan has 512MB of RAM and no disks, and
+# Chromium alone wants about a gigabyte: the agents would be OOM-killed,
+# and screenshots would vanish on every restart. The public demo serves
+# stored results and never launches a browser, so it runs fine on starter;
+# live agent execution wants `standard` or more.
+
+databases:
+  - name: design-drift-db
+    databaseName: design_drift
+    user: design_drift
+    # Postgres 16, matching infra/docker/docker-compose.yml and the version
+    # CI runs its tests against.
+    postgresMajorVersion: "16"
+    plan: basic-256mb
+
+services:
+  - type: web
+    name: design-drift-api
+    runtime: docker
+    dockerfilePath: ./infra/docker/backend.prod.Dockerfile
+    # The build context is backend/, so the Dockerfile's `COPY . .` picks
+    # up the app and not the frontend or the repo's other directories.
+    dockerContext: ./backend
+    plan: starter
+    region: oregon
+    healthCheckPath: /api/v1/health
+    # One instance. The in-process rate limiter and Playwright's memory
+    # appetite both assume a single process; scaling out means moving the
+    # limiter to Redis first (see app/services/rate_limit.py).
+    numInstances: 1
+
+    disk:
+      # Screenshots, diff images and Figma renders. Without this, the
+      # container filesystem is ephemeral and every redeploy would serve
+      # broken images for runs that are still in the database.
+      name: design-drift-storage
+      mountPath: /data
+      sizeGB: 1
+
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: LOG_LEVEL
+        value: INFO
+
+      # Connection string from the managed database above, injected by
+      # Render. Rewritten to SQLAlchemy's async driver at startup, because
+      # Render emits a `postgres://` URL and asyncpg needs
+      # `postgresql+asyncpg://` (see app/core/config.py).
+      - key: DATABASE_URL
+        fromDatabase:
+          name: design-drift-db
+          property: connectionString
+
+      # Generated once by Render and then stable. app/main.py refuses to
+      # start outside local on the checked-in development default, so this
+      # cannot be forgotten silently.
+      - key: JWT_SECRET_KEY
+        generateValue: true
+
+      # The Vercel frontend's origin. Set this to the real deployment URL;
+      # a wildcard would let any site make credentialed calls to this API.
+      - key: CORS_ORIGINS
+        sync: false
+
+      # Where the disk above is mounted.
+      - key: STORAGE_ROOT
+        value: /data
+      # Per-run clones of public repositories. Inside the container, not on
+      # the disk: a clone is scratch space for one run, and keeping it off
+      # the persistent volume means a failed run cannot slowly fill it.
+      - key: WORKSPACE_ROOT
+        value: /workspaces
+      # No local source checkouts in a deployment: a project reads its
+      # source from GitHub or not at all.
+      - key: SOURCE_ROOT
+        value: /workspaces
+
+      # --- Public demo ---------------------------------------------------
+      # Serves one read-only showcase account to anonymous visitors. Every
+      # cost-bearing action on it is refused server-side (see
+      # app/services/demo.py), which is what makes a public URL safe to
+      # publish without a spend cap being the only line of defence.
+      - key: DEMO_MODE
+        value: "true"
+      - key: DEMO_USER_EMAIL
+        value: demo@designdrift.app
+
+      - key: SIGNUP_RATE_LIMIT_PER_HOUR
+        value: "10"
+
+      # --- Secrets: fill these in through the dashboard ------------------
+      # The API key is only ever used by an explicit, authenticated action.
+      # The demo cannot reach it at all.
+      - key: LLM_PROVIDER
+        value: gemini
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: FIGMA_ACCESS_TOKEN
+        sync: false
+
+      # GitHub App, for reading a project's source from a public repository.
+      # Read-only by permission, not merely by code (Contents: read).
+      - key: GITHUB_APP_ID
+        sync: false
+      - key: GITHUB_APP_SLUG
+        sync: false
+      # The App's private key, as a Render secret file rather than an env
+      # var holding the PEM: a path keeps the key out of anything that
+      # dumps the environment. Create it in the dashboard under
+      # "Secret Files" with this exact filename.
+      - key: GITHUB_APP_PRIVATE_KEY_PATH
+        value: /etc/secrets/github-app-private-key.pem

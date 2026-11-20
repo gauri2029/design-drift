@@ -14,11 +14,18 @@ export function ProjectList({
   selectedId,
   onSelect,
   onDelete,
+  canDelete = true,
 }: {
   projects: Project[]
   selectedId: string | null
   onSelect: (id: string) => void
   onDelete: (project: Project) => void
+  /** False on the public demo, where the project is read-only.
+   *
+   * Hides the control rather than disabling it: a greyed-out bin on every
+   * row is noise on a page nobody can delete from. The API refuses the
+   * delete regardless (see app/services/demo.py), so this is presentation. */
+  canDelete?: boolean
 }) {
   if (projects.length === 0) {
     return (
@@ -38,6 +45,7 @@ export function ProjectList({
           selected={project.id === selectedId}
           onSelect={() => onSelect(project.id)}
           onDelete={() => onDelete(project)}
+          canDelete={canDelete}
         />
       ))}
     </ul>
@@ -50,12 +58,14 @@ function ProjectRow({
   selected,
   onSelect,
   onDelete,
+  canDelete,
 }: {
   project: Project
   index: number
   selected: boolean
   onSelect: () => void
   onDelete: () => void
+  canDelete: boolean
 }) {
   const light = useCursorLight<HTMLButtonElement>()
   return (
@@ -99,6 +109,7 @@ function ProjectRow({
 
         {/* Appears on hover, and on keyboard focus - otherwise it would be
             reachable by tab but invisible to the person pressing tab. */}
+        {canDelete && (
         <button
           type="button"
           onClick={onDelete}
@@ -122,6 +133,7 @@ function ProjectRow({
             <path d="M4 7h16M10 11v6M14 11v6M5 7l1 13h12l1-13M9 7V4h6v3" />
           </svg>
         </button>
+        )}
       </div>
     </li>
   )

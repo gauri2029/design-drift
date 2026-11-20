@@ -21,7 +21,14 @@ if config.config_file_name is not None:
 
 # Use the app's own settings (env vars / .env) rather than a hardcoded URL
 # in alembic.ini, so migrations always target the same DB as the app.
-config.set_main_option("sqlalchemy.url", get_settings().database_url)
+#
+# async_database_url rather than the raw setting, for the same reason
+# app/db/session.py uses it: a managed provider hands out a driverless
+# `postgres://` URL, and this env.py runs migrations through an async
+# engine. Without the rewrite, `alembic upgrade head` fails at deploy
+# time — which is the container's start command, so the service would
+# never come up.
+config.set_main_option("sqlalchemy.url", get_settings().async_database_url)
 
 target_metadata = Base.metadata
 

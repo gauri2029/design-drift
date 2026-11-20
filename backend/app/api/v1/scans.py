@@ -3,7 +3,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.auth import require_current_user
+from app.api.v1.auth import current_user_or_demo
 from app.db.session import get_db
 from app.integrations.playwright.exceptions import PlaywrightCaptureError
 from app.integrations.storage.base import StorageBackend
@@ -11,8 +11,10 @@ from app.integrations.storage.local import get_storage_backend
 from app.models.project import Project
 from app.models.user import User
 from app.schemas.scan import ScanCreate, ScanRead
+from app.services import demo as demo_service
 from app.services import projects as projects_service
 from app.services import scans as scans_service
+from app.services.demo import DemoReadOnlyError
 from app.services.scans import ScanTargetNotReadyError
 
 router = APIRouter(prefix="/projects/{project_id}/scans", tags=["scans"])
@@ -31,15 +33,34 @@ async def _get_project_or_404(project_id: UUID, db: AsyncSession, owner_id: UUID
     return project
 
 
+
+
+async def _get_mutable_project_or_404(
+    project_id: UUID, db: AsyncSession, owner_id: UUID, action: str
+) -> Project:
+    """The caller's project, refused if it's the read-only demo's.
+
+    Cost-bearing routes use this rather than `_get_project_or_404`, so the
+    demo gate cannot be skipped by a new route that only remembers the
+    ownership check.
+    """
+    project = await _get_project_or_404(project_id, db, owner_id)
+    try:
+        await demo_service.guard_mutation(db, project, action)
+    except DemoReadOnlyError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    return project
+
+
 @router.post("", response_model=ScanRead, status_code=status.HTTP_201_CREATED)
 async def create_scan(
     project_id: UUID,
     payload: ScanCreate | None = None,
     db: AsyncSession = Depends(get_db),
     storage: StorageBackend = Depends(get_storage_backend),
-    user: User = Depends(require_current_user),
+    user: User = Depends(current_user_or_demo),
 ) -> ScanRead:
-    project = await _get_project_or_404(project_id, db, user.id)
+    project = await _get_mutable_project_or_404(project_id, db, user.id, "running a scan")
     try:
         scan = await scans_service.create_scan(db, project, payload or ScanCreate(), storage)
     except ScanTargetNotReadyError as exc:
@@ -54,14 +75,14 @@ async def create_scans_at_all_breakpoints(
     project_id: UUID,
     db: AsyncSession = Depends(get_db),
     storage: StorageBackend = Depends(get_storage_backend),
-    user: User = Depends(require_current_user),
+    user: User = Depends(current_user_or_demo),
 ) -> list[ScanRead]:
     """Run one scan per standard breakpoint (mobile/tablet/desktop).
 
     Scans that complete before a failure stay persisted — see
     scans_service.create_scans_at_all_breakpoints's docstring.
     """
-    project = await _get_project_or_404(project_id, db, user.id)
+    project = await _get_mutable_project_or_404(project_id, db, user.id, "running scans")
     try:
         scans = await scans_service.create_scans_at_all_breakpoints(db, project, storage)
     except ScanTargetNotReadyError as exc:
@@ -75,7 +96,7 @@ async def create_scans_at_all_breakpoints(
 async def list_scans(
     project_id: UUID,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_current_user),
+    user: User = Depends(current_user_or_demo),
 ) -> list[ScanRead]:
     await _get_project_or_404(project_id, db, user.id)
     scans = await scans_service.list_scans(db, project_id)
@@ -87,7 +108,7 @@ async def get_scan(
     project_id: UUID,
     scan_id: UUID,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_current_user),
+    user: User = Depends(current_user_or_demo),
 ) -> ScanRead:
     await _get_project_or_404(project_id, db, user.id)
     scan = await scans_service.get_scan(db, project_id, scan_id)
@@ -102,7 +123,7 @@ async def get_scan_production_screenshot(
     scan_id: UUID,
     db: AsyncSession = Depends(get_db),
     storage: StorageBackend = Depends(get_storage_backend),
-    user: User = Depends(require_current_user),
+    user: User = Depends(current_user_or_demo),
 ) -> Response:
     await _get_project_or_404(project_id, db, user.id)
     scan = await scans_service.get_scan(db, project_id, scan_id)
@@ -117,7 +138,7 @@ async def get_scan_diff_image(
     scan_id: UUID,
     db: AsyncSession = Depends(get_db),
     storage: StorageBackend = Depends(get_storage_backend),
-    user: User = Depends(require_current_user),
+    user: User = Depends(current_user_or_demo),
 ) -> Response:
     await _get_project_or_404(project_id, db, user.id)
     scan = await scans_service.get_scan(db, project_id, scan_id)
